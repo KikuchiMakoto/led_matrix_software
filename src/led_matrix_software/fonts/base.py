@@ -1,4 +1,5 @@
 """Base class for font renderers"""
+
 from abc import ABC, abstractmethod
 import numpy as np
 

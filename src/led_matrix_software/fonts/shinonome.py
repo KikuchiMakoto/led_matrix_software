@@ -1,4 +1,5 @@
 """Shinonome 16-pixel font renderer"""
+
 import csv
 import unicodedata
 from pathlib import Path
@@ -35,7 +36,7 @@ class ShinonomeFont(FontRenderer):
     def _load_character_map(self):
         """Load character code mapping from TSV file"""
         tsv_path = self.font_dir / "iso-2022-jp-2004-std.tsv"
-        with open(tsv_path, mode="r", encoding="utf-8", newline='') as f:
+        with open(tsv_path, mode="r", encoding="utf-8", newline="") as f:
             reader = csv.reader(f, delimiter="\t")
             # Skip header (23 lines)
             for _ in range(23):
@@ -53,12 +54,12 @@ class ShinonomeFont(FontRenderer):
     def _get_latin_image(self, char: str) -> Optional[np.ndarray]:
         """Get image for ASCII character"""
         try:
-            ascii_code = int(char.encode('ascii')[0])
+            ascii_code = int(char.encode("ascii")[0])
         except (UnicodeEncodeError, UnicodeDecodeError):
             return None
 
-        target_string = "STARTCHAR " + format(ascii_code, '2x')
-        next_string = "ENCODING " + format(ascii_code, 'd')
+        target_string = "STARTCHAR " + format(ascii_code, "2x")
+        next_string = "ENCODING " + format(ascii_code, "d")
 
         bdf_path = self.font_dir / "latin.bdf"
         with open(bdf_path, mode="r", encoding="utf-8") as f:
@@ -76,11 +77,11 @@ class ShinonomeFont(FontRenderer):
     def _get_hankaku_image(self, char: str) -> Optional[np.ndarray]:
         """Get image for half-width character"""
         try:
-            sjis = int(char.encode('shift_jis')[0])
+            sjis = int(char.encode("shift_jis")[0])
         except (UnicodeEncodeError, UnicodeDecodeError):
             return None
 
-        target_string = "STARTCHAR   " + format(sjis, '2x')
+        target_string = "STARTCHAR   " + format(sjis, "2x")
 
         bdf_path = self.font_dir / "hankaku.bdf"
         with open(bdf_path, mode="r", encoding="utf-8") as f:
@@ -106,7 +107,7 @@ class ShinonomeFont(FontRenderer):
         if jisx is None:
             return None
 
-        target_string = "STARTCHAR " + format(jisx, '4x')
+        target_string = "STARTCHAR " + format(jisx, "4x")
 
         bdf_path = self.font_dir / "zenkaku.bdf"
         with open(bdf_path, mode="r", encoding="utf-8") as f:
@@ -133,11 +134,11 @@ class ShinonomeFont(FontRenderer):
         """
         width_type = unicodedata.east_asian_width(char)
 
-        if width_type == 'Na':  # Narrow (ASCII)
+        if width_type == "Na":  # Narrow (ASCII)
             return self._get_latin_image(char)
-        elif width_type in ('F', 'W'):  # Fullwidth or Wide
+        elif width_type in ("F", "W"):  # Fullwidth or Wide
             return self._get_zenkaku_image(char)
-        elif width_type == 'H':  # Halfwidth
+        elif width_type == "H":  # Halfwidth
             return self._get_hankaku_image(char)
 
         return None
@@ -153,7 +154,7 @@ class ShinonomeFont(FontRenderer):
             Binary image (height=16, variable width)
         """
         merged_image = None
-        padding = cv2.imread(str(self.font_dir / 'padding.bmp'))
+        padding = cv2.imread(str(self.font_dir / "padding.bmp"))
 
         for char in text:
             char_img = self.get_char_image(char)

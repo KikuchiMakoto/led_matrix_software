@@ -1,4 +1,5 @@
 """Chara Zenkaku font renderer"""
+
 from pathlib import Path
 from typing import Optional, Tuple
 
@@ -36,9 +37,9 @@ class CharaZenkakuFont(FontRenderer):
         Returns:
             (line, column) position or None if not found
         """
-        txt_path = self.font_dir / 'chara_zenkaku.txt'
+        txt_path = self.font_dir / "chara_zenkaku.txt"
         try:
-            with open(txt_path, mode='r', encoding="utf-8") as f:
+            with open(txt_path, mode="r", encoding="utf-8") as f:
                 lines = f.readlines()
                 for i, line in enumerate(lines):
                     if char in line:
@@ -62,7 +63,7 @@ class CharaZenkakuFont(FontRenderer):
             return None
 
         line, num = pos
-        png_path = self.font_dir / 'chara_zenkaku.png'
+        png_path = self.font_dir / "chara_zenkaku.png"
 
         try:
             img = cv2.imread(str(png_path))
@@ -71,7 +72,7 @@ class CharaZenkakuFont(FontRenderer):
 
             x = self.x_offset + num * self.x_step
             y = self.y_offset + line * self.y_step
-            char_img = img[y:y + self.char_height, x:x + self.char_width]
+            char_img = img[y : y + self.char_height, x : x + self.char_width]
 
             return char_img
         except Exception:
@@ -88,7 +89,7 @@ class CharaZenkakuFont(FontRenderer):
             Binary image (height=16, variable width)
         """
         merged_image = None
-        padding = cv2.imread(str(self.font_dir / 'padding.bmp'))
+        padding = cv2.imread(str(self.font_dir / "padding.bmp"))
 
         for char in text:
             char_img = self.get_char_image(char)

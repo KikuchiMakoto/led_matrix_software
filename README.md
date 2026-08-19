@@ -17,6 +17,7 @@
 - **表示モード**
   - 静的表示: テキストを固定表示
   - スクロール表示: テキストを右から左にスクロール
+  - **ダッシュボードモード**: 東京都目黒区駒場の天気予報と京王本線／京王井の頭線／千代田線／小田急線の遅延情報を非同期でスクレイピングしてスクロール表示。警報・注意報は反転フラッシュ＋低速スクロールで強調。
 
 ## インストール
 
@@ -62,8 +63,8 @@ uv run python -m led_matrix_software.main --device image --mode scroll --text "�
 ### シリアルデバイスの使用
 
 ```bash
-# Windows
-uv run python -m led_matrix_software.main --device serial --port COM23 --text "Hello"
+# Windows (COM5)
+uv run python -m led_matrix_software.main --device serial --port COM5 --text "Hello"
 
 # Linux/Mac
 uv run python -m led_matrix_software.main --device serial --port /dev/ttyUSB0 --text "Hello"
@@ -79,6 +80,51 @@ uv run python -m led_matrix_software.main --font shinonome --text "東京スカ�
 uv run python -m led_matrix_software.main --font chara_zenkaku --text "あけましておめでとう"
 ```
 
+### ダッシュボードモード
+
+ダッシュボードモードは非同期実行のMailLoopとして動作し、天気予報と電車遅延情報をスクロールします。
+
+```bash
+# ターミナルシミュレータでテスト
+uv run python -m led_matrix_software.main --mode dashboard --device terminal
+
+# 実機シリアル (COM5)
+uv run python -m led_matrix_software.main --mode dashboard --device serial --port COM5
+
+# 動画として保存（MP4）
+uv run python -m led_matrix_software.main --mode dashboard --device image --output-dir output/dashboard
+
+# 取得間隔とスクロール速度をカスタマイズ
+uv run python -m led_matrix_software.main --mode dashboard --device terminal \
+    --weather-interval 300 --train-interval 30 \
+    --scroll-speed 0.02 --alert-scroll-speed 0.05
+```
+
+#### ダッシュボードモードの動作
+
+1. **天気予報スクレイパ** (tenki.jp目黒区)
+   - 10分間隔で「今日」セクションを取得 (`--weather-interval` 秒)
+   - 天気、最高/最低気温、現在の湿度を抽出
+   - `警報・注意報` ページから東京都に発表中の警報・注意報を抽出
+
+2. **電車遅延スクレイパ** (Yahoo!乗換案内)
+   - 60秒間隔で4路線の運行状況を取得 (`--train-interval` 秒)
+   - 対象路線: 京王本線 / 京王井の頭線 / 小田急小田原線 / 東京メトロ千代田線
+   - 並列取得 (ThreadPoolExecutor)
+
+3. **非同期MailLoop**
+   - メインスレッド: 天気予報をスクロール → 1周期終了時に「新着の遅延割り込み」があれば運行情報スクロールを挿入
+   - バックグラウンドスレッド: スクレイパを定期実行し、`DashboardState` (threading.Lock) を更新
+
+4. **警報・注意報の強調表示**
+   - 該当文字列を `！注意報！` で囲む
+   - スクロール中の警報区間フレームを **反転（背景ON/文字OFF）** に交互切り替えでフラッシュ再生
+   - 通常 0.02s/frame → 警報区間 0.04s/frame に減速
+
+5. **フォント制約**
+   - ダッシュボードモードは Shinonome 固定（天気・注意報に必要な漢字/記号が揃うため）
+   - `--font chara_zenkaku` を指定するとエラー終了
+
 ### コマンドラインオプション
 
 ```
@@ -87,10 +133,13 @@ uv run python -m led_matrix_software.main --font chara_zenkaku --text "あけま
 --baudrate BAUDRATE               ボーレート（デフォルト: 921600）
 --font {shinonome,chara_zenkaku}  使用するフォント（デフォルト: shinonome）
 --font-dir FONT_DIR               フォントディレクトリパス
---mode {static,scroll}            表示モード（デフォルト: static）
+--mode {static,scroll,loop,dashboard}  表示モード（デフォルト: static）
 --text TEXT                       表示するテキスト
 --scroll-speed SPEED              スクロール速度（秒）（デフォルト: 0.02）
 --output-dir OUTPUT_DIR           画像出力ディレクトリ（デフォルト: output）
+--weather-interval SECONDS        dashboard: 天気取得間隔（デフォルト: 600）
+--train-interval SECONDS          dashboard: 電車取得間隔（デフォルト: 60）
+--alert-scroll-speed SECONDS      dashboard: 警報区間のスクロール遅延（デフォルト: 0.04）
 ```
 
 ## プロジェクト構造
@@ -107,11 +156,18 @@ led-matrix-software/
 │       │   ├── base.py          # デバイス基底クラス
 │       │   ├── serial_device.py # シリアルデバイス
 │       │   └── simulator.py     # シミュレータ（ターミナル/画像）
-│       └── fonts/               # フォントモジュール
+│       ├── fonts/               # フォントモジュール
+│       │   ├── __init__.py
+│       │   ├── base.py          # フォント基底クラス
+│       │   ├── shinonome.py     # Shinonomeフォント
+│       │   └── chara_zenkaku.py # Chara Zenkakuフォント
+│       └── dashboard/           # ダッシュボードモード
 │           ├── __init__.py
-│           ├── base.py          # フォント基底クラス
-│           ├── shinonome.py     # Shinonomeフォント
-│           └── chara_zenkaku.py # Chara Zenkakuフォント
+│           ├── state.py         # スレッドセーフな共有状態
+│           ├── weather.py       # tenki.jp 天気スクレイパ
+│           ├── trains.py        # Yahoo!乗換案内 電車スクレイパ
+│           ├── renderer.py      # 表示テキスト生成 + 強調フレーム列
+│           └── mail_loop.py     # 非同期メインループ
 ├── shinonome16-1.0.4/           # Shinonomeフォントデータ
 ├── chara_zenkaku/               # Chara Zenkakuフォントデータ
 ├── pyproject.toml               # プロジェクト設定
@@ -139,6 +195,9 @@ led-matrix-software/
 ```bash
 # ターミナルシミュレータでテスト
 uv run python -m led_matrix_software.main --device terminal --text "テスト"
+
+# ダッシュボードモードのテスト（オフライン時は天気/電車取得失敗の表示が出る）
+uv run python -m led_matrix_software.main --mode dashboard --device terminal
 ```
 
 ### コードフォーマット

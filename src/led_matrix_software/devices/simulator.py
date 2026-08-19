@@ -1,6 +1,8 @@
 """LED Matrix Simulator - Terminal and Image output"""
+
 import os
 import sys
+import io
 import numpy as np
 import cv2
 from pathlib import Path
@@ -22,6 +24,17 @@ class TerminalSimulator(LEDDevice):
         self.height = 16
         self.use_unicode = use_unicode
         self.frame_count = 0
+        self._stdout = self._make_stdout()
+
+    @staticmethod
+    def _make_stdout() -> io.TextIOBase:
+        """Return a stdout configured to emit UTF-8 on Windows consoles."""
+        try:
+            if hasattr(sys.stdout, "reconfigure"):
+                sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        except Exception:
+            pass
+        return sys.stdout
 
     def write(self, matrix_buffer: np.ndarray) -> None:
         """
@@ -31,13 +44,14 @@ class TerminalSimulator(LEDDevice):
             matrix_buffer: uint16 array [8][16]
         """
         # Clear screen
-        if os.name == 'nt':  # Windows
-            os.system('cls')
+        if os.name == "nt":  # Windows
+            os.system("cls")
         else:  # Unix/Linux/Mac
-            os.system('clear')
+            os.system("clear")
 
-        print(f"\n=== LED Matrix Simulator (Frame {self.frame_count}) ===")
-        print("+" + "-" * self.width + "+")
+        out = self._stdout
+        out.write(f"\n=== LED Matrix Simulator (Frame {self.frame_count}) ===\n")
+        out.write("+" + "-" * self.width + "+\n")
 
         for y in range(self.height):
             row = "|"
@@ -52,9 +66,13 @@ class TerminalSimulator(LEDDevice):
                 else:
                     row += "#" if is_on else " "
             row += "|"
-            print(row)
+            out.write(row + "\n")
 
-        print("+" + "-" * self.width + "+")
+        out.write("+" + "-" * self.width + "+\n")
+        try:
+            out.flush()
+        except Exception:
+            pass
         self.frame_count += 1
 
     def close(self) -> None:
@@ -66,10 +84,7 @@ class ImageSimulator(LEDDevice):
     """Simulated LED matrix device with image file output"""
 
     def __init__(
-        self,
-        output_dir: str = "output",
-        pixel_size: int = 10,
-        save_individual_frames: bool = False
+        self, output_dir: str = "output", pixel_size: int = 10, save_individual_frames: bool = False
     ):
         """
         Initialize image simulator.
@@ -165,14 +180,9 @@ class ImageSimulator(LEDDevice):
             return
 
         output_path = self.output_dir / filename
-        fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+        fourcc = cv2.VideoWriter_fourcc(*"mp4v")
         height, width = self.frames[0].shape[:2]
-        out = cv2.VideoWriter(
-            str(output_path),
-            fourcc,
-            fps,
-            (width, height)
-        )
+        out = cv2.VideoWriter(str(output_path), fourcc, fps, (width, height))
 
         for frame in self.frames:
             out.write(frame)

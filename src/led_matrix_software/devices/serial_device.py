@@ -1,4 +1,5 @@
 """Serial LED device implementation"""
+
 import base64
 import numpy as np
 import serial
@@ -33,7 +34,7 @@ class SerialLEDDevice(LEDDevice):
             matrix_buffer: uint16 array [8][16]
         """
         barray = matrix_buffer.tobytes()
-        b64 = base64.b64encode(barray) + b'\r\n'
+        b64 = base64.b64encode(barray) + b"\r\n"
         self.serial.write(b64)
 
     def close(self) -> None:

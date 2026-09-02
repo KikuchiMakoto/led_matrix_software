@@ -71,8 +71,22 @@ def _train_status_label(status: str, error: Optional[str]) -> str:
     return status
 
 
+def _is_abnormal(status: str, error: Optional[str]) -> bool:
+    """Check if train line status indicates delay, suspension, or error."""
+    if error:
+        return True
+    if not status or status in ("平常運転", "通常運転"):
+        return False
+    return True
+
+
 def build_train_text(state: DashboardState) -> str:
-    """Compose the train status block shown alongside weather in the main scroll."""
+    """Compose the train status block shown alongside weather in the main scroll.
+
+    If all lines are running normally (or unretrieved without error), returns
+    an empty string so normal status is not displayed. When delays or abnormalities
+    occur, displays only the abnormal lines with expanded detail descriptions.
+    """
     trains = state.get_trains()
     items: list[str] = []
     from .trains import DISPLAY_ORDER
@@ -80,14 +94,20 @@ def build_train_text(state: DashboardState) -> str:
     for line in DISPLAY_ORDER:
         ts = trains.get(line)
         if ts is None:
-            items.append(f"{line} 未取得")
             continue
+        if not _is_abnormal(ts.status, ts.error):
+            continue
+
         label = _train_status_label(ts.status, ts.error)
-        if ts.detail and ts.status not in ("平常運転",) and not ts.error:
+        if ts.detail and not ts.error:
             short = _short_detail(ts.detail)
             items.append(f"{line} {label}({short})")
         else:
             items.append(f"{line} {label}")
+
+    if not items:
+        return ""
+
     return "運行情報 " + TRAIN_ITEM_SEPARATOR.join(items)
 
 
@@ -95,15 +115,20 @@ def build_dashboard_text(
     state: DashboardState,
     available_icons: Optional[Mapping[str, np.ndarray]] = None,
 ) -> str:
-    """Compose the full dashboard scroll text: weather followed by train status."""
-    return f"{build_weather_text(state, available_icons)}{BLOCK_SEPARATOR}{build_train_text(state)}"
+    """Compose full dashboard scroll text: weather and (if any abnormal) train status."""
+    weather_text = build_weather_text(state, available_icons)
+    train_text = build_train_text(state)
+    if not train_text:
+        return weather_text
+    return f"{weather_text}{BLOCK_SEPARATOR}{train_text}"
 
 
 def weather_alert_tokens() -> list[str]:
     """Substrings whose columns should be flagged for inverted-flash."""
-    return ["！注意報！"]
+    return ["！注意報！", "！警報！"]
 
 
-def _short_detail(detail: str, max_len: int = 32) -> str:
+def _short_detail(detail: str, max_len: int = 256) -> str:
+    """Format and truncate delay detail text (increased limit: 256 chars)."""
     detail = detail.replace("\u3000", " ").strip()
     return detail if len(detail) <= max_len else detail[: max_len - 1] + "…"

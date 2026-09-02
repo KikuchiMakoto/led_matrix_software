@@ -20,6 +20,7 @@ logger = logging.getLogger(__name__)
 
 MEGURO_FORECAST_URL = "https://tenki.jp/forecast/3/16/4410/13110/"
 MEGURO_HOURLY_URL = "https://tenki.jp/forecast/3/16/4410/13110/3hours.html"
+TOKYO_WARNING_URL = "https://tenki.jp/bousai/warn/3/16/"
 WARNING_LIST_URL = "https://tenki.jp/bousai/warn/"
 
 HTTP_TIMEOUT = 10
@@ -30,13 +31,14 @@ USER_AGENT = (
 
 
 def _http_get(url: str) -> Optional[str]:
-    """Fetch URL with a desktop User-Agent; return text or None on failure."""
+    """Fetch URL with desktop User-Agent; enforce UTF-8 as tenki.jp is UTF-8."""
     try:
         resp = requests.get(url, headers={"User-Agent": USER_AGENT}, timeout=HTTP_TIMEOUT)
         if resp.status_code != 200:
             logger.warning("tenki.jp fetch %s -> HTTP %s", url, resp.status_code)
             return None
-        resp.encoding = resp.apparent_encoding or "utf-8"
+        # tenki.jp pages are always UTF-8; apparent_encoding can guess cp932/euc-jp
+        resp.encoding = "utf-8"
         return resp.text
     except requests.RequestException as exc:
         logger.warning("tenki.jp fetch %s failed: %s", url, exc)
@@ -65,17 +67,36 @@ def _parse_today_block(soup: BeautifulSoup) -> dict[str, str]:
     telop = today.select_one(".weather-telop")
     if telop is not None:
         weather_text = telop.get_text(strip=True)
+    if not weather_text:
+        img = today.select_one("img[alt]")
+        if img and img.get("alt"):
+            weather_text = img["alt"].strip()
 
     high, low = "", ""
-    for span in today.select(".high-temp, .low-temp"):
-        cls = " ".join(span.get("class", []))
-        txt = span.get_text(strip=True)
-        if not txt or txt in {"最高", "最低", "[0]", "[+1]", "[-1]"}:
-            continue
-        if "high" in cls:
-            high = txt
-        elif "low" in cls:
-            low = txt
+
+    # Specifically target temperature cells (.temp) and avoid diff cells (.tempdiff)
+    high_temp_elem = today.select_one("dd.high-temp.temp, .high-temp.temp, .high-temp .temp")
+    if high_temp_elem is not None:
+        high = high_temp_elem.get_text(strip=True)
+
+    low_temp_elem = today.select_one("dd.low-temp.temp, .low-temp.temp, .low-temp .temp")
+    if low_temp_elem is not None:
+        low = low_temp_elem.get_text(strip=True)
+
+    # Fallback if specific classes differ: scan .high-temp and .low-temp while strictly excluding .tempdiff
+    if not high or not low:
+        for span in today.select(".high-temp, .low-temp"):
+            cls = span.get("class", [])
+            if "tempdiff" in cls or "sumarry" in cls:
+                continue
+            txt = span.get_text(strip=True)
+            if not txt or re.match(r"^\[[+-]?\d+\]$", txt) or txt in {"最高", "最低"}:
+                continue
+            cls_str = " ".join(cls)
+            if "high" in cls_str and not high:
+                high = txt
+            elif "low" in cls_str and not low:
+                low = txt
 
     return {
         "today_weather": weather_text,
@@ -85,34 +106,78 @@ def _parse_today_block(soup: BeautifulSoup) -> dict[str, str]:
 
 
 def _parse_current_humidity(soup: BeautifulSoup) -> str:
-    """Pick the most recent numeric humidity entry from the 3-hour forecast table."""
+    """Pick the humidity entry closest to the current time from the 3-hour forecast table."""
+    import datetime
+
+    current_hour = datetime.datetime.now().hour
+
+    # Try 3-hour table for today
+    table = soup.select_one("#forecast-point-3h-today, table.forecast-point-3h")
+    if table is not None:
+        hour_tds = [td.get_text(strip=True) for td in table.select("tr.hour td")]
+        humid_tds = [td.get_text(strip=True) for td in table.select("tr.humidity td")]
+
+        if hour_tds and len(hour_tds) == len(humid_tds):
+            parsed_entries: list[tuple[int, str]] = []
+            for h_str, hum in zip(hour_tds, humid_tds):
+                m_h = re.search(r"\d+", h_str)
+                m_hum = re.search(r"\d+", hum)
+                if m_h and m_hum:
+                    parsed_entries.append((int(m_h.group(0)), m_hum.group(0)))
+
+            if parsed_entries:
+                # Find entry closest to current hour (e.g. 14 -> 15)
+                best_entry = min(parsed_entries, key=lambda item: abs(item[0] - current_hour))
+                return f"{best_entry[1]}%"
+
+    # Fallback: find any humidity row and pick the closest numeric value
     for tr in soup.select("tr"):
         th = tr.find("th")
         if th is None or "湿度" not in th.get_text():
             continue
         cells = [c.get_text(strip=True) for c in tr.find_all("td")]
-        nums = [c for c in cells if re.fullmatch(r"-?\d+(?:\.\d+)?", c)]
+        nums = [re.search(r"\d+", c).group(0) for c in cells if re.search(r"\d+", c)]
         if nums:
-            return f"{nums[-1]}%"
+            # Pick first available or closest
+            idx = min(max(0, current_hour // 3), len(nums) - 1)
+            return f"{nums[idx]}%"
     return ""
 
 
-def _parse_warnings(soup: BeautifulSoup) -> list[str]:
-    """Return active 注意報 / 警報 names covering Tokyo from the warning summary."""
-    rows = soup.select("table tr")
+def _parse_warnings(soup_tokyo: Optional[BeautifulSoup], soup_all: Optional[BeautifulSoup]) -> list[str]:
+    """Return active 注意報 / 警報 names covering Meguro-ku / Tokyo from tenki.jp warning tables."""
     active: list[str] = []
-    for tr in rows:
-        cells = [c.get_text(strip=True) for c in tr.find_all(["th", "td"])]
-        if not cells:
-            continue
-        if cells[0] not in {"警報", "注意報"}:
-            continue
-        if "東京" not in cells:
-            continue
-        warning_type = cells[1] if len(cells) > 1 else ""
-        if warning_type:
-            label = "警報" if cells[0] == "警報" else "注意報"
-            active.append(f"{warning_type}{label}")
+
+    # First check Tokyo warning page which lists municipal areas including Meguro-ku
+    if soup_tokyo is not None:
+        for tr in soup_tokyo.select("table tr"):
+            cells = [c.get_text(strip=True) for c in tr.find_all(["th", "td"])]
+            if any("目黒" in c for c in cells):
+                for cell in cells:
+                    if cell in {"目黒区", "発表なし", "-"}:
+                        continue
+                    # Any warnings listed (e.g., 強風注意報, 大雨警報, etc.)
+                    for w in re.findall(r"[\u4e00-\u9fa5]+(?:警報|注意報)", cell):
+                        if w not in active:
+                            active.append(w)
+                if active:
+                    return active
+
+    # Fallback to nationwide summary table
+    if soup_all is not None:
+        for tr in soup_all.select("table tr"):
+            cells = [c.get_text(strip=True) for c in tr.find_all(["th", "td"])]
+            if len(cells) < 2 or cells[0] not in {"警報", "注意報"}:
+                continue
+            if "東京" not in cells:
+                continue
+            warning_type = cells[1]
+            if warning_type:
+                label = "警報" if cells[0] == "警報" else "注意報"
+                name = f"{warning_type}{label}"
+                if name not in active:
+                    active.append(name)
+
     return active
 
 
@@ -133,11 +198,11 @@ def fetch_weather() -> WeatherInfo:
     else:
         info["humidity"] = ""
 
-    warnings_html = _http_get(WARNING_LIST_URL)
-    if warnings_html is not None:
-        info["warnings"] = _parse_warnings(BeautifulSoup(warnings_html, "html.parser"))
-    else:
-        info["warnings"] = []
+    tokyo_warn_html = _http_get(TOKYO_WARNING_URL)
+    all_warn_html = _http_get(WARNING_LIST_URL) if tokyo_warn_html is None else None
+    soup_tokyo = BeautifulSoup(tokyo_warn_html, "html.parser") if tokyo_warn_html else None
+    soup_all = BeautifulSoup(all_warn_html, "html.parser") if all_warn_html else None
+    info["warnings"] = _parse_warnings(soup_tokyo, soup_all)
 
     return WeatherInfo(
         today_weather=info.get("today_weather", ""),

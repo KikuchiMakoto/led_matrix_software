@@ -38,7 +38,7 @@ def scroll_text(device, font, text: str, scroll_speed: float = 0.01):
         device: LED device instance
         font: Font renderer instance
         text: Text to scroll
-        scroll_speed: Delay between frames in seconds (default: 0.01)
+        scroll_speed: Delay between frames in seconds (default: 0.0125)
 
     The scroll will run once through the text and stop.
     """
@@ -69,7 +69,7 @@ def loop_text(device, font, text: str, scroll_speed: float = 0.01, stop_event=No
         device: LED device instance
         font: Font renderer instance
         text: Text to scroll
-        scroll_speed: Delay between frames in seconds (default: 0.01)
+        scroll_speed: Delay between frames in seconds (default: 0.0125)
         stop_event: Optional threading.Event to stop the loop (used by tray mode)
 
     The scroll will loop infinitely until interrupted with Ctrl+C.

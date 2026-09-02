@@ -13,7 +13,6 @@ glyphs.
 
 from __future__ import annotations
 
-import random
 from typing import Mapping, Optional
 
 import numpy as np
@@ -55,11 +54,11 @@ def _format_city_weather(
     if w.today_high and w.today_low:
         high = w.today_high.removesuffix("度")
         low = w.today_low.removesuffix("度")
-        parts.append(f"気温{high}/{low}度")
+        parts.append(f"{high}/{low}度")
     elif w.today_high:
-        parts.append(f"最高{w.today_high}")
+        parts.append(f"{w.today_high}")
     if w.humidity:
-        parts.append(f"湿度{w.humidity}")
+        parts.append(f"{w.humidity}")
     if w.warnings:
         joined = " ".join(w.warnings)
         if any("特別警報" in x for x in w.warnings):
@@ -72,13 +71,6 @@ def _format_city_weather(
     return " ".join(parts)
 
 
-def _get_machida_label() -> str:
-    """Return city label for Machida with 5% chance of Easter egg '神奈川県町田市'."""
-    if random.random() < 0.05:
-        return "神奈川県町田市"
-    return "東京都町田市"
-
-
 def build_weather_text(
     state: DashboardState,
     available_icons: Optional[Mapping[str, np.ndarray]] = None,
@@ -87,14 +79,14 @@ def build_weather_text(
     available_icons = available_icons or {}
     cities = state.get_cities_weather()
 
-    # Ordered list: 目黒 -> 府中市 -> 町田市 -> 戸田市 -> 横浜市 -> 君津市
+    # Ordered list: 目黒 -> 府中 -> 町田 -> 戸田 -> 横浜 -> 君津
     CITY_ORDER = [
         ("東京都目黒区", "目黒"),
-        ("東京都府中市", "東京都府中市"),
-        ("町田市", "町田市"),
-        ("埼玉県戸田市", "埼玉県戸田市"),
-        ("神奈川県横浜市", "神奈川県横浜市"),
-        ("千葉県君津市", "千葉県君津市"),
+        ("東京都府中市", "府中"),
+        ("町田市", "町田"),
+        ("埼玉県戸田市", "戸田"),
+        ("神奈川県横浜市", "横浜"),
+        ("千葉県君津市", "君津"),
     ]
 
     if cities:
@@ -108,11 +100,7 @@ def build_weather_text(
             if info is None:
                 continue
 
-            if key == "町田市":
-                label = _get_machida_label()
-            else:
-                label = display_name
-            city_blocks.append(_format_city_weather(label, info, available_icons))
+            city_blocks.append(_format_city_weather(display_name, info, available_icons))
 
         if city_blocks:
             return CITY_SEPARATOR.join(city_blocks)

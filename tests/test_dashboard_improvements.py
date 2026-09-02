@@ -82,44 +82,40 @@ def test_train_text_displays_when_delayed_with_expanded_limit():
     assert long_detail in text  # Fully preserved up to 256 chars
 
 
-def test_multi_city_weather_and_easter_egg(monkeypatch):
+def test_multi_city_weather_chain():
     state = DashboardState()
     state.update_cities_weather({
-        "東京都目黒区": WeatherInfo(today_weather="晴", today_high="32度", today_low="24度"),
-        "東京都府中市": WeatherInfo(today_weather="曇", today_high="31度", today_low="23度"),
-        "町田市": WeatherInfo(today_weather="雨", today_high="29度", today_low="22度"),
-        "埼玉県戸田市": WeatherInfo(today_weather="晴", today_high="33度", today_low="25度"),
-        "神奈川県横浜市": WeatherInfo(today_weather="曇", today_high="30度", today_low="24度"),
-        "千葉県君津市": WeatherInfo(today_weather="雨", today_high="28度", today_low="23度"),
+        "東京都目黒区": WeatherInfo(today_weather="晴", today_high="32度", today_low="24度", humidity="65%"),
+        "東京都府中市": WeatherInfo(today_weather="曇", today_high="31度", today_low="23度", humidity="70%"),
+        "町田市": WeatherInfo(today_weather="雨", today_high="29度", today_low="22度", humidity="80%"),
+        "埼玉県戸田市": WeatherInfo(today_weather="晴", today_high="33度", today_low="25度", humidity="60%"),
+        "神奈川県横浜市": WeatherInfo(today_weather="曇", today_high="30度", today_low="24度", humidity="68%"),
+        "千葉県君津市": WeatherInfo(today_weather="雨", today_high="28度", today_low="23度", humidity="75%"),
     })
     state.update_trains({
         "京王本線": TrainStatus(line="京王本線", status="平常運転"),
     })
 
-    # Test 1: Standard Tokyo Machida (< 0.05 condition not met)
-    monkeypatch.setattr("random.random", lambda: 0.10)
     dash_text = build_dashboard_text(state)
     assert "目黒" in dash_text
-    assert "東京都府中市" in dash_text
-    assert "東京都町田市" in dash_text
-    assert "埼玉県戸田市" in dash_text
-    assert "神奈川県横浜市" in dash_text
-    assert "千葉県君津市" in dash_text
-    assert "神奈川県町田市" not in dash_text
+    assert "府中" in dash_text
+    assert "町田" in dash_text
+    assert "戸田" in dash_text
+    assert "横浜" in dash_text
+    assert "君津" in dash_text
+    # 冗長プレフィックスが省かれていることの検証
+    assert "気温" not in dash_text
+    assert "湿度" not in dash_text
+    assert "32/24度" in dash_text
+    assert "65%" in dash_text
     assert "運行情報：平常運転" in dash_text
 
-    # Check chain order: 目黒 -> 府中市 -> 町田市 -> 戸田市 -> 横浜市 -> 君津市 -> 運行情報
+    # Check chain order: 目黒 -> 府中 -> 町田 -> 戸田 -> 横浜 -> 君津 -> 運行情報
     meguro_idx = dash_text.index("目黒")
-    fuchu_idx = dash_text.index("東京都府中市")
-    machida_idx = dash_text.index("東京都町田市")
-    toda_idx = dash_text.index("埼玉県戸田市")
-    yokohama_idx = dash_text.index("神奈川県横浜市")
-    kimitsu_idx = dash_text.index("千葉県君津市")
+    fuchu_idx = dash_text.index("府中")
+    machida_idx = dash_text.index("町田")
+    toda_idx = dash_text.index("戸田")
+    yokohama_idx = dash_text.index("横浜")
+    kimitsu_idx = dash_text.index("君津")
     train_idx = dash_text.index("運行情報：平常運転")
     assert meguro_idx < fuchu_idx < machida_idx < toda_idx < yokohama_idx < kimitsu_idx < train_idx
-
-    # Test 2: 5% Easter egg trigger (random < 0.05)
-    monkeypatch.setattr("random.random", lambda: 0.02)
-    dash_text_egg = build_dashboard_text(state)
-    assert "神奈川県町田市" in dash_text_egg
-    assert "東京都町田市" not in dash_text_egg

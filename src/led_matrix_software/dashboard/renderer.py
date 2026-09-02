@@ -33,8 +33,8 @@ TRAIN_ITEM_SEPARATOR = "  "  # 2 ASCII spaces (~16 px gap)
 def _weather_segment(today_weather: str, available_icons: Mapping[str, np.ndarray]) -> str:
     """Return the weather-character segment, using icon placeholder if possible."""
     if today_weather in available_icons:
-        return f"本日 {WEATHER_PLACEHOLDER}"
-    return f"本日 {today_weather}"
+        return WEATHER_PLACEHOLDER
+    return today_weather
 
 
 def build_weather_text(

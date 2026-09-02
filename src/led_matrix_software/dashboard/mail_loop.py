@@ -115,16 +115,11 @@ class DashboardMailLoop:
 
     def _safe_fetch_weather(self) -> None:
         try:
-            weather = fetch_weather()
-            self.state.update_weather(weather)
-            logger.info(
-                "Weather fetched: %s high=%s low=%s humidity=%s warnings=%d",
-                weather.today_weather,
-                weather.today_high,
-                weather.today_low,
-                weather.humidity,
-                len(weather.warnings),
-            )
+            from .weather import fetch_all_cities_weather
+
+            cities = fetch_all_cities_weather()
+            self.state.update_cities_weather(cities)
+            logger.info("Fetched weather for cities: %s", ", ".join(cities.keys()))
         except Exception as exc:
             logger.warning("Weather fetch raised: %s", exc)
 

@@ -132,11 +132,20 @@ class DashboardState:
     def __init__(self) -> None:
         self._lock = threading.Lock()
         self._weather: WeatherInfo = WeatherInfo()
+        self._cities_weather: dict[str, WeatherInfo] = {}
         self._trains: dict[str, TrainStatus] = {}
 
     def update_weather(self, weather: WeatherInfo) -> None:
         with self._lock:
             self._weather = weather
+
+    def update_cities_weather(self, cities: dict[str, WeatherInfo]) -> None:
+        with self._lock:
+            self._cities_weather = dict(cities)
+            if "東京都目黒区" in cities:
+                self._weather = cities["東京都目黒区"]
+            elif "目黒区" in cities:
+                self._weather = cities["目黒区"]
 
     def update_trains(self, trains: dict[str, TrainStatus]) -> None:
         with self._lock:
@@ -145,6 +154,10 @@ class DashboardState:
     def get_weather(self) -> WeatherInfo:
         with self._lock:
             return self._weather
+
+    def get_cities_weather(self) -> dict[str, WeatherInfo]:
+        with self._lock:
+            return dict(self._cities_weather)
 
     def get_trains(self) -> dict[str, TrainStatus]:
         with self._lock:

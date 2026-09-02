@@ -13,18 +13,22 @@ glyphs.
 
 from __future__ import annotations
 
+import random
 from typing import Mapping, Optional
 
 import numpy as np
 
-from .state import DashboardState
+from .state import DashboardState, WeatherInfo
 
 
-LOCATION_LABEL = "目黒区駒場"
+LOCATION_LABEL = "目黒"
 WEATHER_PLACEHOLDER = "\ue000"  # PUA: replaced by 16x16 weather icon if available
 
 # Separator between weather block and train block.
 BLOCK_SEPARATOR = "          "  # 10 ASCII spaces (~80 px gap)
+
+# Separator between different city blocks.
+CITY_SEPARATOR = "      "  # 6 ASCII spaces (~48 px gap)
 
 # Separator between train line items.
 TRAIN_ITEM_SEPARATOR = "  "  # 2 ASCII spaces (~16 px gap)
@@ -37,14 +41,13 @@ def _weather_segment(today_weather: str, available_icons: Mapping[str, np.ndarra
     return today_weather
 
 
-def build_weather_text(
-    state: DashboardState,
-    available_icons: Optional[Mapping[str, np.ndarray]] = None,
+def _format_city_weather(
+    city_name: str,
+    w: WeatherInfo,
+    available_icons: Mapping[str, np.ndarray],
 ) -> str:
-    """Compose the weather portion of the dashboard scroll text."""
-    available_icons = available_icons or {}
-    w = state.get_weather()
-    parts: list[str] = [LOCATION_LABEL]
+    """Format single city weather into string."""
+    parts: list[str] = [city_name]
     if w.error:
         parts.append(f"天気取得失敗({w.error})")
     elif w.today_weather:
@@ -67,6 +70,56 @@ def build_weather_text(
             tag = "！注意報！"
         parts.append(f"{tag}{joined}{tag}")
     return " ".join(parts)
+
+
+def _get_machida_label() -> str:
+    """Return city label for Machida with 5% chance of Easter egg '神奈川県町田市'."""
+    if random.random() < 0.05:
+        return "神奈川県町田市"
+    return "東京都町田市"
+
+
+def build_weather_text(
+    state: DashboardState,
+    available_icons: Optional[Mapping[str, np.ndarray]] = None,
+) -> str:
+    """Compose the weather portion of the dashboard scroll text for all cities."""
+    available_icons = available_icons or {}
+    cities = state.get_cities_weather()
+
+    # Ordered list: 目黒 -> 府中市 -> 町田市 -> 戸田市 -> 横浜市 -> 君津市
+    CITY_ORDER = [
+        ("東京都目黒区", "目黒"),
+        ("東京都府中市", "東京都府中市"),
+        ("町田市", "町田市"),
+        ("埼玉県戸田市", "埼玉県戸田市"),
+        ("神奈川県横浜市", "神奈川県横浜市"),
+        ("千葉県君津市", "千葉県君津市"),
+    ]
+
+    if cities:
+        city_blocks: list[str] = []
+        for key, display_name in CITY_ORDER:
+            info = cities.get(key)
+            if info is None:
+                # Also support aliases if present
+                if key == "東京都目黒区":
+                    info = cities.get("目黒") or cities.get("目黒区")
+            if info is None:
+                continue
+
+            if key == "町田市":
+                label = _get_machida_label()
+            else:
+                label = display_name
+            city_blocks.append(_format_city_weather(label, info, available_icons))
+
+        if city_blocks:
+            return CITY_SEPARATOR.join(city_blocks)
+
+    # Fallback to single weather record
+    w = state.get_weather()
+    return _format_city_weather(LOCATION_LABEL, w, available_icons)
 
 
 def _train_status_label(status: str, error: Optional[str]) -> str:

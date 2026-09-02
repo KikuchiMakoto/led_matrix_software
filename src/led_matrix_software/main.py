@@ -30,7 +30,7 @@ def show_text(device, font, text: str):
     device.write(matrix)
 
 
-def scroll_text(device, font, text: str, scroll_speed: float = 0.015):
+def scroll_text(device, font, text: str, scroll_speed: float = 0.01):
     """
     Scroll text across LED matrix once.
 
@@ -38,7 +38,7 @@ def scroll_text(device, font, text: str, scroll_speed: float = 0.015):
         device: LED device instance
         font: Font renderer instance
         text: Text to scroll
-        scroll_speed: Delay between frames in seconds (default: 0.015)
+        scroll_speed: Delay between frames in seconds (default: 0.01)
 
     The scroll will run once through the text and stop.
     """
@@ -61,7 +61,7 @@ def scroll_text(device, font, text: str, scroll_speed: float = 0.015):
     print("Scroll completed.")
 
 
-def loop_text(device, font, text: str, scroll_speed: float = 0.015, stop_event=None):
+def loop_text(device, font, text: str, scroll_speed: float = 0.01, stop_event=None):
     """
     Scroll text across LED matrix infinitely.
 
@@ -69,7 +69,7 @@ def loop_text(device, font, text: str, scroll_speed: float = 0.015, stop_event=N
         device: LED device instance
         font: Font renderer instance
         text: Text to scroll
-        scroll_speed: Delay between frames in seconds (default: 0.015)
+        scroll_speed: Delay between frames in seconds (default: 0.01)
         stop_event: Optional threading.Event to stop the loop (used by tray mode)
 
     The scroll will loop infinitely until interrupted with Ctrl+C.
@@ -106,7 +106,7 @@ def dashboard_text(
     *,
     weather_interval: float = 600.0,
     train_interval: float = 60.0,
-    scroll_speed: float = 0.015,
+    scroll_speed: float = 0.01,
     alert_scroll_speed: float = 0.04,
     stop_event=None,
 ) -> None:
@@ -218,7 +218,7 @@ def main():
         "--text", default="Hello, LED!", help="Text to display (ignored by dashboard mode)"
     )
     parser.add_argument(
-        "--scroll-speed", type=float, default=0.015, help="Scroll speed in seconds (default: 0.015)"
+        "--scroll-speed", type=float, default=0.01, help="Scroll speed in seconds (default: 0.01)"
     )
 
     # Background (task tray) option

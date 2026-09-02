@@ -42,7 +42,7 @@ class DashboardMailLoop:
         *,
         weather_interval: float = 600.0,
         train_interval: float = 60.0,
-        scroll_speed: float = 0.015,
+        scroll_speed: float = 0.01,
         alert_scroll_speed: float = 0.04,
         on_update: Optional[Callable[[DashboardState], None]] = None,
     ) -> None:
@@ -136,8 +136,11 @@ class DashboardMailLoop:
 
     def _display_loop(self) -> None:
         assert self._engine is not None
+        from ..timing import PreciseTicker
+
         engine = self._engine
         engine.enqueue_padding(screen_widths=1)
+        ticker = PreciseTicker(self.scroll_speed)
 
         while not self._stop_event.is_set():
             if engine.pending_count() == 0:
@@ -145,7 +148,7 @@ class DashboardMailLoop:
             engine.step()
             matrix = make_matrix_buffer(engine.buffer)
             self.device.write(matrix)
-            time.sleep(self._next_delay(engine))
+            ticker.sleep_until_next(self._next_delay(engine))
 
     def _refill_dashboard(self, engine: ScrollEngine) -> None:
         weather = self.state.get_weather()

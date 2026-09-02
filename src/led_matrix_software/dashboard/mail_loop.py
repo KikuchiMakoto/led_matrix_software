@@ -42,7 +42,7 @@ class DashboardMailLoop:
         *,
         weather_interval: float = 600.0,
         train_interval: float = 60.0,
-        scroll_speed: float = 0.02,
+        scroll_speed: float = 0.015,
         alert_scroll_speed: float = 0.04,
         on_update: Optional[Callable[[DashboardState], None]] = None,
     ) -> None:

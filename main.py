@@ -18,6 +18,11 @@ Usage:
     python main.py --mode dashboard --device terminal
     python main.py --mode dashboard --device serial --port COM5
 
+    # Background mode (resident in the task tray, quit from the tray menu)
+    python main.py --bg --mode dashboard --device serial --port COM5
+    # To hide the console window on Windows, launch with pythonw:
+    #   pythonw main.py --bg --mode dashboard --device serial --port COM5
+
     # Using different devices
     python main.py --device serial --port COM5 --text "Test"
     python main.py --device terminal --text "Test"
@@ -29,9 +34,17 @@ Usage:
 import argparse
 import sys
 
+from src.led_matrix_software.background import is_bg_child, relaunch_detached
 from src.led_matrix_software.fonts import ShinonomeFont, CharaZenkakuFont
-from src.led_matrix_software.devices import SerialLEDDevice, TerminalSimulator, ImageSimulator
-from src.led_matrix_software.main import show_text, scroll_text, loop_text, dashboard_text
+from src.led_matrix_software.devices import (
+    SerialLEDDevice,
+    TerminalSimulator,
+    ImageSimulator,
+    FrameTapDevice,
+)
+from src.led_matrix_software.main import run_display
+from src.led_matrix_software.power import prevent_sleep
+from src.led_matrix_software.tray import run_in_tray
 
 
 def main():
@@ -46,6 +59,7 @@ Examples:
   %(prog)s --mode loop --text "ループテスト"
   %(prog)s --mode dashboard --device terminal
   %(prog)s --mode dashboard --device serial --port COM5
+  %(prog)s --bg --mode dashboard --device serial --port COM5
   %(prog)s --device serial --port COM5 --text "Test"
   %(prog)s --device image --output-dir output --mode scroll --text "動画"
   %(prog)s --device image --output-dir output --mode loop --text "ループ動画"
@@ -106,6 +120,21 @@ Examples:
         help='Scroll speed in seconds (default: 0.02)'
     )
 
+    # Background (task tray) option
+    parser.add_argument(
+        '--bg',
+        action='store_true',
+        help=(
+            'Run detached in the task tray: the terminal is released immediately '
+            'and the display keeps running after it is closed (quit from the tray menu)'
+        )
+    )
+    parser.add_argument(
+        '--bg-log',
+        default='led_matrix_bg.log',
+        help='Log file for --bg output (default: led_matrix_bg.log)'
+    )
+
     # Image output options
     parser.add_argument(
         '--output-dir',
@@ -143,6 +172,13 @@ Examples:
         )
         sys.exit(2)
 
+    # --bg: hand over to a detached child and free this terminal immediately.
+    if args.bg and not is_bg_child():
+        pid, log_path = relaunch_detached(args.bg_log)
+        print(f"Running in background (pid {pid}). Quit from the task tray icon.")
+        print(f"Log: {log_path}")
+        return
+
     # Initialize font
     print(f"Initializing font: {args.font}")
     if args.font == 'shinonome':
@@ -168,38 +204,18 @@ Examples:
         device = ImageSimulator(output_dir=args.output_dir)
 
     try:
-        # Display text
-        if args.mode == 'static':
-            print(f"Displaying text: {args.text}")
-            show_text(device, font, args.text)
-            if args.device == 'terminal':
-                print("\nPress Ctrl+C to exit...")
-                try:
-                    import time
-                    while True:
-                        time.sleep(1)
-                except KeyboardInterrupt:
-                    pass
-        elif args.mode == 'scroll':
-            print(f"Scrolling text: {args.text}")
-            scroll_text(device, font, args.text, scroll_speed=args.scroll_speed)
-        elif args.mode == 'loop':
-            # For image device, loop mode behaves as scroll mode (single scroll)
-            if args.device == 'image':
-                print("Image device detected: loop mode will behave as scroll mode (single scroll)")
-                scroll_text(device, font, args.text, scroll_speed=args.scroll_speed)
+        # Keep the PC awake while displaying; screen lock / screen off is allowed.
+        with prevent_sleep():
+            if args.bg:
+                tap = FrameTapDevice(device)
+                run_in_tray(
+                    lambda stop_event: run_display(args, tap, font, stop_event),
+                    title="LED Matrix",
+                    status=f"{args.mode} / {args.device}",
+                    frame_source=tap.latest_frame,
+                )
             else:
-                print(f"Looping text: {args.text}")
-                loop_text(device, font, args.text, scroll_speed=args.scroll_speed)
-        else:  # dashboard
-            dashboard_text(
-                device,
-                font,
-                weather_interval=args.weather_interval,
-                train_interval=args.train_interval,
-                scroll_speed=args.scroll_speed,
-                alert_scroll_speed=args.alert_scroll_speed,
-            )
+                run_display(args, device, font)
 
     finally:
         device.close()

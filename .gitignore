@@ -38,6 +38,7 @@ output/
 *.mp4
 *.avi
 frame_*.png
+*.log
 
 # OS
 .DS_Store

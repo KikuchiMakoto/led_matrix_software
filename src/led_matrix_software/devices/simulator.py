@@ -25,6 +25,15 @@ class TerminalSimulator(LEDDevice):
         self.use_unicode = use_unicode
         self.frame_count = 0
         self._stdout = self._make_stdout()
+        self._can_clear = self._console_available()
+
+    @staticmethod
+    def _console_available() -> bool:
+        """False when detached from a console (background/tray mode)."""
+        try:
+            return bool(sys.stdout.isatty())
+        except Exception:
+            return False
 
     @staticmethod
     def _make_stdout() -> io.TextIOBase:
@@ -43,11 +52,12 @@ class TerminalSimulator(LEDDevice):
         Args:
             matrix_buffer: uint16 array [8][16]
         """
-        # Clear screen
-        if os.name == "nt":  # Windows
-            os.system("cls")
-        else:  # Unix/Linux/Mac
-            os.system("clear")
+        # Clear screen (skipped when there is no console, e.g. background mode)
+        if self._can_clear:
+            if os.name == "nt":  # Windows
+                os.system("cls")
+            else:  # Unix/Linux/Mac
+                os.system("clear")
 
         out = self._stdout
         out.write(f"\n=== LED Matrix Simulator (Frame {self.frame_count}) ===\n")

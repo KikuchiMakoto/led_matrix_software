@@ -59,7 +59,13 @@ def build_weather_text(
         parts.append(f"湿度{w.humidity}")
     if w.warnings:
         joined = " ".join(w.warnings)
-        parts.append(f"！注意報！{joined}！注意報！")
+        if any("特別警報" in x for x in w.warnings):
+            tag = "！特別警報！"
+        elif any("警報" in x for x in w.warnings):
+            tag = "！警報！"
+        else:
+            tag = "！注意報！"
+        parts.append(f"{tag}{joined}{tag}")
     return " ".join(parts)
 
 
@@ -83,9 +89,9 @@ def _is_abnormal(status: str, error: Optional[str]) -> bool:
 def build_train_text(state: DashboardState) -> str:
     """Compose the train status block shown alongside weather in the main scroll.
 
-    If all lines are running normally (or unretrieved without error), returns
-    an empty string so normal status is not displayed. When delays or abnormalities
-    occur, displays only the abnormal lines with expanded detail descriptions.
+    If all lines are running normally without error, returns '運行情報：平常運転'.
+    When delays or abnormalities occur, displays only the abnormal lines with
+    expanded detail descriptions.
     """
     trains = state.get_trains()
     items: list[str] = []
@@ -106,7 +112,7 @@ def build_train_text(state: DashboardState) -> str:
             items.append(f"{line} {label}")
 
     if not items:
-        return ""
+        return "運行情報：平常運転" if trains else ""
 
     return "運行情報 " + TRAIN_ITEM_SEPARATOR.join(items)
 
@@ -125,7 +131,7 @@ def build_dashboard_text(
 
 def weather_alert_tokens() -> list[str]:
     """Substrings whose columns should be flagged for inverted-flash."""
-    return ["！注意報！", "！警報！"]
+    return ["！注意報！", "！警報！", "！特別警報！"]
 
 
 def _short_detail(detail: str, max_len: int = 256) -> str:

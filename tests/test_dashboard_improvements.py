@@ -49,7 +49,7 @@ def test_humidity_parsing_matches_current_slot():
     assert 60 <= val <= 100
 
 
-def test_train_text_empty_when_normal():
+def test_train_text_normal_when_no_abnormalities():
     state = DashboardState()
     state.update_trains({
         "京王本線": TrainStatus(line="京王本線", status="平常運転"),
@@ -57,10 +57,10 @@ def test_train_text_empty_when_normal():
         "東京メトロ千代田線": TrainStatus(line="東京メトロ千代田線", status="平常運転"),
         "小田急小田原線": TrainStatus(line="小田急小田原線", status="平常運転"),
     })
-    # Normal -> empty string (do not display)
-    assert build_train_text(state) == ""
+    # 全線正常時はコンパクトに「運行情報：平常運転」と表示
+    assert build_train_text(state) == "運行情報：平常運転"
     dash = build_dashboard_text(state)
-    assert "運行情報" not in dash
+    assert "運行情報：平常運転" in dash
 
 
 def test_train_text_displays_when_delayed_with_expanded_limit():

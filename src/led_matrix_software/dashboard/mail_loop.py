@@ -83,6 +83,12 @@ class DashboardMailLoop:
             self._fetcher_thread.join(timeout=2.0)
 
     def _fetch_loop(self) -> None:
+        from ..timing import deprioritize_background_thread
+
+        # Lower background thread priority to idle/nice 19 so it never interferes with display
+        prio_info = deprioritize_background_thread()
+        logger.debug("Background fetcher thread priority: %s", prio_info)
+
         # Initial concurrent fetch so trains aren't shown as 未取得 during the
         # first weather-only window.
         with ThreadPoolExecutor(max_workers=2) as pool:
@@ -139,7 +145,11 @@ class DashboardMailLoop:
         import gc
         import sys
         from concurrent.futures import Future, ThreadPoolExecutor
-        from ..timing import PreciseTicker
+        from ..timing import PreciseTicker, optimize_display_thread_priority
+
+        # Optimize Linux thread priority (SCHED_FIFO or lowest allowed nice value)
+        prio_info = optimize_display_thread_priority()
+        logger.info("Display loop thread priority: %s", prio_info)
 
         # 4: Reduce GIL switch interval to 0.5ms so background fetchers don't stall the display thread
         sys.setswitchinterval(0.0005)

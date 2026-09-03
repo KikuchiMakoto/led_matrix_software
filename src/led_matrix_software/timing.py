@@ -87,3 +87,62 @@ class PreciseTicker:
                 time.sleep(remaining - 0.001)
             while time.perf_counter() < self._next_deadline:
                 pass
+
+
+def optimize_display_thread_priority() -> str:
+    """Optimize current thread priority for real-time display on Linux.
+
+    Attempts SCHED_FIFO first (if permitted), then falls back to the most
+    favorable nice level allowed for the current user. Safe on non-Linux platforms.
+
+    Returns:
+        Description string of the applied priority setting.
+    """
+    if not sys.platform.startswith("linux"):
+        return "non-linux (default priority)"
+
+    # 1. Try SCHED_FIFO real-time scheduler
+    try:
+        if hasattr(os, "sched_setscheduler") and hasattr(os, "SCHED_FIFO"):
+            param = os.sched_param(50)
+            os.sched_setscheduler(0, os.SCHED_FIFO, param)
+            return "SCHED_FIFO(priority=50)"
+    except (PermissionError, OSError):
+        pass
+
+    # 2. Try best possible nice level (-20 down to -1) allowed without sudo
+    current_nice = os.nice(0)
+    for target in range(-20, current_nice):
+        try:
+            delta = target - current_nice
+            new_nice = os.nice(delta)
+            return f"nice={new_nice}"
+        except (PermissionError, OSError):
+            continue
+
+    return f"nice={current_nice} (default)"
+
+
+def deprioritize_background_thread() -> str:
+    """Set the current thread to the lowest priority (idle / nice=19) on Linux.
+
+    Safe for unprivileged users (sudo is never required to lower priority).
+    Ensures background network/scraping workers never steal CPU from rendering.
+
+    Returns:
+        Description string of the applied priority setting.
+    """
+    if not sys.platform.startswith("linux"):
+        return "non-linux"
+
+    try:
+        current_nice = os.nice(0)
+        target = 19
+        if current_nice < target:
+            new_nice = os.nice(target - current_nice)
+            return f"nice={new_nice}"
+    except (PermissionError, OSError):
+        pass
+
+    return "nice=unchanged"
+

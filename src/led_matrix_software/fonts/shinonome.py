@@ -31,6 +31,14 @@ class ShinonomeFont(FontRenderer):
         """
         self.font_dir = Path(font_dir)
         self.zenkaku_map = []
+        self._utf8_to_jisx: dict[int, int] = {}
+        self._glyph_cache: dict[str, Optional[np.ndarray]] = {}
+        self._latin_lines: Optional[list[str]] = None
+        self._hankaku_lines: Optional[list[str]] = None
+        self._zenkaku_lines: Optional[list[str]] = None
+        self._latin_index: dict[str, int] = {}
+        self._hankaku_index: dict[str, int] = {}
+        self._zenkaku_index: dict[str, int] = {}
         self._load_character_map()
 
     def _load_character_map(self):
@@ -46,10 +54,42 @@ class ShinonomeFont(FontRenderer):
                 try:
                     ver, jisx = cols[0].split("-")
                     utf8 = cols[1].split("+")[1]
-                    char = self.CharacterMapping(int(ver), int(jisx, 16), int(utf8, 16))
+                    ver_i = int(ver)
+                    jisx_i = int(jisx, 16)
+                    utf8_i = int(utf8, 16)
+                    char = self.CharacterMapping(ver_i, jisx_i, utf8_i)
                     self.zenkaku_map.append(char)
+                    self._utf8_to_jisx[utf8_i] = jisx_i
                 except (IndexError, ValueError):
                     pass
+
+    def _ensure_bdf_indexed(self, bdf_name: str) -> tuple[list[str], dict[str, int]]:
+        """Lazily load BDF file once and build an index mapping startchar key to line offset."""
+        if bdf_name == "latin":
+            if self._latin_lines is None:
+                self._latin_lines, self._latin_index = self._index_bdf("latin.bdf")
+            return self._latin_lines, self._latin_index
+        elif bdf_name == "hankaku":
+            if self._hankaku_lines is None:
+                self._hankaku_lines, self._hankaku_index = self._index_bdf("hankaku.bdf")
+            return self._hankaku_lines, self._hankaku_index
+        else:
+            if self._zenkaku_lines is None:
+                self._zenkaku_lines, self._zenkaku_index = self._index_bdf("zenkaku.bdf")
+            return self._zenkaku_lines, self._zenkaku_index
+
+    def _index_bdf(self, filename: str) -> tuple[list[str], dict[str, int]]:
+        path = self.font_dir / filename
+        idx: dict[str, int] = {}
+        if not path.exists():
+            return [], idx
+        with open(path, mode="r", encoding="utf-8") as f:
+            lines = f.readlines()
+        for i, line in enumerate(lines):
+            if line.startswith("STARTCHAR"):
+                key = line[10:].strip().lower()
+                idx[key] = i
+        return lines, idx
 
     def _get_latin_image(self, char: str) -> Optional[np.ndarray]:
         """Get image for ASCII character"""
@@ -58,21 +98,18 @@ class ShinonomeFont(FontRenderer):
         except (UnicodeEncodeError, UnicodeDecodeError):
             return None
 
-        target_string = "STARTCHAR " + format(ascii_code, "2x")
-        next_string = "ENCODING " + format(ascii_code, "d")
-
-        bdf_path = self.font_dir / "latin.bdf"
-        with open(bdf_path, mode="r", encoding="utf-8") as f:
-            lines = f.readlines()
-            for i, line in enumerate(lines):
-                if line.startswith(target_string) and lines[i + 1].startswith(next_string):
-                    ret = np.zeros((16, 8, 3), np.uint8)
-                    for j in range(16):
-                        line = lines[i + 6 + j]
-                        for bit in range(8):
-                            ret[j][bit] = [0, 0, 0] if line[bit] == "." else [255, 255, 255]
-                    return ret
-        return None
+        key = format(ascii_code, "2x").strip().lower()
+        lines, idx = self._ensure_bdf_indexed("latin")
+        if key not in idx:
+            return None
+        i = idx[key]
+        ret = np.zeros((16, 8, 3), np.uint8)
+        for j in range(16):
+            if i + 6 + j < len(lines):
+                line = lines[i + 6 + j]
+                for bit in range(min(8, len(line))):
+                    ret[j][bit] = [0, 0, 0] if line[bit] == "." else [255, 255, 255]
+        return ret
 
     def _get_hankaku_image(self, char: str) -> Optional[np.ndarray]:
         """Get image for half-width character"""
@@ -81,46 +118,43 @@ class ShinonomeFont(FontRenderer):
         except (UnicodeEncodeError, UnicodeDecodeError):
             return None
 
-        target_string = "STARTCHAR   " + format(sjis, "2x")
-
-        bdf_path = self.font_dir / "hankaku.bdf"
-        with open(bdf_path, mode="r", encoding="utf-8") as f:
-            lines = f.readlines()
-            for i, line in enumerate(lines):
-                if line.startswith(target_string):
-                    ret = np.zeros((16, 8, 3), np.uint8)
-                    for j in range(16):
-                        line = lines[i + 6 + j]
-                        for bit in range(8):
-                            ret[j][bit] = [0, 0, 0] if line[bit] == "." else [255, 255, 255]
-                    return ret
-        return None
+        key = format(sjis, "2x").strip().lower()
+        lines, idx = self._ensure_bdf_indexed("hankaku")
+        if key not in idx:
+            return None
+        i = idx[key]
+        ret = np.zeros((16, 8, 3), np.uint8)
+        for j in range(16):
+            if i + 6 + j < len(lines):
+                line = lines[i + 6 + j]
+                for bit in range(min(8, len(line))):
+                    ret[j][bit] = [0, 0, 0] if line[bit] == "." else [255, 255, 255]
+        return ret
 
     def _get_zenkaku_image(self, char: str) -> Optional[np.ndarray]:
         """Get image for full-width character"""
-        jisx = None
-        for c in self.zenkaku_map:
-            if c.utf8 == ord(char):
-                jisx = c.jisx
-                break
+        jisx = self._utf8_to_jisx.get(ord(char))
+        if jisx is None:
+            for c in self.zenkaku_map:
+                if c.utf8 == ord(char):
+                    jisx = c.jisx
+                    break
 
         if jisx is None:
             return None
 
-        target_string = "STARTCHAR " + format(jisx, "4x")
-
-        bdf_path = self.font_dir / "zenkaku.bdf"
-        with open(bdf_path, mode="r", encoding="utf-8") as f:
-            lines = f.readlines()
-            for i, line in enumerate(lines):
-                if line.startswith(target_string):
-                    ret = np.zeros((16, 16, 3), np.uint8)
-                    for j in range(16):
-                        line = lines[i + 6 + j]
-                        for bit in range(16):
-                            ret[j][bit] = [0, 0, 0] if line[bit] == "." else [255, 255, 255]
-                    return ret
-        return None
+        key = format(jisx, "4x").strip().lower()
+        lines, idx = self._ensure_bdf_indexed("zenkaku")
+        if key not in idx:
+            return None
+        i = idx[key]
+        ret = np.zeros((16, 16, 3), np.uint8)
+        for j in range(16):
+            if i + 6 + j < len(lines):
+                line = lines[i + 6 + j]
+                for bit in range(min(16, len(line))):
+                    ret[j][bit] = [0, 0, 0] if line[bit] == "." else [255, 255, 255]
+        return ret
 
     def get_char_image(self, char: str) -> Optional[np.ndarray]:
         """
@@ -132,19 +166,24 @@ class ShinonomeFont(FontRenderer):
         Returns:
             Character image (16x8 or 16x16) or None if not found
         """
+        if char in self._glyph_cache:
+            cached = self._glyph_cache[char]
+            return cached.copy() if cached is not None else None
+
+        img: Optional[np.ndarray] = None
         width_type = unicodedata.east_asian_width(char)
 
         if width_type == "Na":  # Narrow (ASCII)
-            return self._get_latin_image(char)
+            img = self._get_latin_image(char)
         elif width_type in ("F", "W", "A"):  # Fullwidth, Wide, or Ambiguous (e.g. ℃)
             img = self._get_zenkaku_image(char)
-            if img is not None:
-                return img
-            return self._get_latin_image(char) or self._get_hankaku_image(char)
+            if img is None:
+                img = self._get_latin_image(char) or self._get_hankaku_image(char)
         elif width_type == "H":  # Halfwidth
-            return self._get_hankaku_image(char)
+            img = self._get_hankaku_image(char)
 
-        return None
+        self._glyph_cache[char] = img
+        return img.copy() if img is not None else None
 
     def render_string(self, text: str) -> np.ndarray:
         """

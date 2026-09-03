@@ -55,11 +55,12 @@ def _format_city_weather(
     elif w.today_weather:
         parts.append(_weather_segment(w.today_weather, available_icons))
     if w.today_high and w.today_low:
-        high = w.today_high.removesuffix("度")
-        low = w.today_low.removesuffix("度")
-        parts.append(f"{high}/{low}度")
+        high = w.today_high.removesuffix("度").removesuffix("℃")
+        low = w.today_low.removesuffix("度").removesuffix("℃")
+        parts.append(f"{high}/{low}℃")
     elif w.today_high:
-        parts.append(f"{w.today_high}")
+        high = w.today_high.removesuffix("度").removesuffix("℃")
+        parts.append(f"{high}℃")
     if w.warnings:
         joined = " ".join(w.warnings)
         if any("特別警報" in x for x in w.warnings):

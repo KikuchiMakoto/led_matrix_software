@@ -136,8 +136,11 @@ class ShinonomeFont(FontRenderer):
 
         if width_type == "Na":  # Narrow (ASCII)
             return self._get_latin_image(char)
-        elif width_type in ("F", "W"):  # Fullwidth or Wide
-            return self._get_zenkaku_image(char)
+        elif width_type in ("F", "W", "A"):  # Fullwidth, Wide, or Ambiguous (e.g. ℃)
+            img = self._get_zenkaku_image(char)
+            if img is not None:
+                return img
+            return self._get_latin_image(char) or self._get_hankaku_image(char)
         elif width_type == "H":  # Halfwidth
             return self._get_hankaku_image(char)
 

@@ -245,6 +245,8 @@ WEATHER_ICON_ALIASES: dict[str, list[str]] = {
     "snowy": ["雪", "大雪", "みぞれ"],
     "thunder": ["雷", "雷雨"],
     "storm": ["雷", "雷雨", "嵐"],
+    "celsius": ["℃", "度"],
+    "degree": ["℃", "度"],
 }
 
 HARDCODED_TRAIN_ICONS = {
@@ -288,8 +290,8 @@ def _load_external_bmp_icons(directory: Path) -> dict[str, np.ndarray]:
         if img is None:
             logger.warning("Failed to decode %s (cv2 returned None)", bmp_path)
             continue
-        if img.shape != (16, 16):
-            logger.warning("Skipping %s: expected 16x16, got %s", bmp_path, img.shape)
+        if img.shape[0] != 16 or img.shape[1] < 1 or img.shape[1] > 16:
+            logger.warning("Skipping %s: expected height 16 and width 1..16, got %s", bmp_path, img.shape)
             continue
         _, binary = cv2.threshold(img, 128, 255, cv2.THRESH_BINARY)
         stem = bmp_path.stem

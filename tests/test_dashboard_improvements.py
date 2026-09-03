@@ -107,7 +107,7 @@ def test_multi_city_weather_chain():
     assert "気温" not in dash_text
     assert "湿度" not in dash_text
     assert "65%" not in dash_text
-    assert "32/24度" in dash_text
+    assert "32/24℃" in dash_text
     assert "運行情報：平常運転" in dash_text
 
     # Check chain order: 目黒 -> 府中 -> 町田 -> 戸田 -> 横浜 -> 君津 -> 運行情報

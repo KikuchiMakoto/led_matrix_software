@@ -34,9 +34,7 @@ TRAIN_ITEM_SEPARATOR = "  "  # 2 ASCII spaces (~16 px gap)
 
 
 def _weather_segment(today_weather: str, available_icons: Mapping[str, np.ndarray]) -> str:
-    """Return the weather-character segment, using icon placeholder if possible."""
-    if today_weather in available_icons:
-        return WEATHER_PLACEHOLDER
+    """Return the weather-character segment."""
     return today_weather
 
 
@@ -57,8 +55,6 @@ def _format_city_weather(
         parts.append(f"{high}/{low}度")
     elif w.today_high:
         parts.append(f"{w.today_high}")
-    if w.humidity:
-        parts.append(f"{w.humidity}")
     if w.warnings:
         joined = " ".join(w.warnings)
         if any("特別警報" in x for x in w.warnings):

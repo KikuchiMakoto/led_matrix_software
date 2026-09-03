@@ -22,7 +22,12 @@ import numpy as np
 
 logger = logging.getLogger(__name__)
 
-ICON_DIR = Path(__file__).parent / "icons" / "weather"
+ICON_DIRS = [
+    Path(__file__).parent / "icons" / "weather",
+    Path(__file__).parent / "icons",
+    Path.cwd() / "dashboard" / "icons" / "weather",
+    Path.cwd() / "dashboard" / "icons",
+]
 
 
 def _bmp(rows: list[str]) -> np.ndarray:
@@ -229,6 +234,19 @@ HARDCODED_WEATHER_ICONS = {
     "雷雨": ICON_THUNDER,
 }
 
+# English filename aliases mapped to Japanese weather keys
+WEATHER_ICON_ALIASES: dict[str, list[str]] = {
+    "sunny": ["晴", "晴れ", "快晴"],
+    "clear": ["晴", "晴れ", "快晴"],
+    "cloudy": ["曇", "曇り"],
+    "rain": ["雨", "小雨", "大雨", "雨時々曇", "雨時々雪"],
+    "rainy": ["雨", "小雨", "大雨", "雨時々曇", "雨時々雪"],
+    "snow": ["雪", "大雪", "みぞれ"],
+    "snowy": ["雪", "大雪", "みぞれ"],
+    "thunder": ["雷", "雷雨"],
+    "storm": ["雷", "雷雨", "嵐"],
+}
+
 HARDCODED_TRAIN_ICONS = {
     "平常通り": ICON_TRAIN_OK,
     "平常": ICON_TRAIN_OK,
@@ -274,13 +292,27 @@ def _load_external_bmp_icons(directory: Path) -> dict[str, np.ndarray]:
             logger.warning("Skipping %s: expected 16x16, got %s", bmp_path, img.shape)
             continue
         _, binary = cv2.threshold(img, 128, 255, cv2.THRESH_BINARY)
-        icons[bmp_path.stem] = binary
+        stem = bmp_path.stem
+        icons[stem] = binary
+        # Also register Japanese aliases if English filename is used
+        stem_lower = stem.lower()
+        if stem_lower in WEATHER_ICON_ALIASES:
+            for alias in WEATHER_ICON_ALIASES[stem_lower]:
+                icons[alias] = binary
         logger.info("Loaded external weather icon: %s", bmp_path.name)
     return icons
 
 
-# BMP files placed in dashboard/icons/weather/ override the hardcoded icons
-EXTERNAL_WEATHER_ICONS = _load_external_bmp_icons(ICON_DIR)
+def _load_all_external_icons() -> dict[str, np.ndarray]:
+    """Load icons from all candidate directories, later directories overriding earlier."""
+    merged: dict[str, np.ndarray] = {}
+    for d in ICON_DIRS:
+        merged.update(_load_external_bmp_icons(d))
+    return merged
+
+
+# BMP files placed in dashboard/icons/ override the hardcoded icons
+EXTERNAL_WEATHER_ICONS = _load_all_external_icons()
 
 
 def available_weather_icons() -> dict[str, np.ndarray]:

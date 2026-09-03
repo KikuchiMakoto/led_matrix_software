@@ -21,7 +21,7 @@ from concurrent.futures import ThreadPoolExecutor
 from typing import Callable, Optional
 
 from ..matrix import make_matrix_buffer
-from .renderer import WEATHER_PLACEHOLDER, build_dashboard_text, weather_alert_tokens
+from .renderer import build_dashboard_text, weather_alert_tokens
 from .scroll_engine import Column, ScrollEngine
 from .state import DashboardState, MessageQueue
 from .trains import fetch_all_trains
@@ -157,22 +157,10 @@ class DashboardMailLoop:
             engine.enqueue_padding(screen_widths=1)
             return
         tokens = weather_alert_tokens() if weather.has_warnings else None
-        # Substitute the weather placeholder with the matching 16x16 BMP / hardcoded
-        # icon when one is available; otherwise the renderer emits the actual character.
-        icon_overrides = self._icon_overrides_for(weather.today_weather)
+        # Pass external BMP icons as character overrides so that any matching
+        # weather characters (across all cities) render as 16x16 bitmaps.
+        icon_overrides = self._available_icons if self._available_icons else None
         engine.enqueue_text(text, alert_tokens=tokens, icon_overrides=icon_overrides)
-
-    def _icon_overrides_for(self, today_weather: str) -> dict:
-        """Return icon override only when an external BMP matches.
-
-        Hardcoded icons are intentionally ignored by default; drop a BMP in
-        ``dashboard/icons/weather/`` and restart to enable it.
-        """
-        if not today_weather:
-            return {}
-        if today_weather not in self._available_icons:
-            return {}
-        return {WEATHER_PLACEHOLDER: self._available_icons[today_weather]}
 
     def _next_delay(self, engine: ScrollEngine) -> float:
         """Use alert_scroll_speed when the next FIFO column is flagged."""

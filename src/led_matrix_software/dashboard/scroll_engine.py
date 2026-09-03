@@ -92,6 +92,43 @@ class ScrollEngine:
         for _ in range(screen_widths * self.PAD_COLUMNS):
             self._fifo.append(Column(data=zero_col.copy()))
 
+    def render_text_columns(
+        self,
+        text: str,
+        *,
+        leading_screen_widths: int = 1,
+        trailing_screen_widths: int = 1,
+        alert_tokens: Optional[list[str]] = None,
+        icon_overrides: Optional[dict[str, np.ndarray]] = None,
+    ) -> list[Column]:
+        """Render text into a list of Column objects without mutating the FIFO.
+
+        This allows prefetching / background rendering of the next message.
+        """
+        pad_chars = " " * (self.width // 8)
+        padded = pad_chars * leading_screen_widths + text + pad_chars * trailing_screen_widths
+        alert_flags = self._alert_char_mask(padded, alert_tokens or [])
+        icon_overrides = icon_overrides or {}
+
+        columns: list[Column] = []
+        is_first = True
+        for i, ch in enumerate(padded):
+            char_is_alert = alert_flags[i]
+            payload, width = self._char_payload(ch, icon_overrides)
+            if payload is None:
+                continue
+            if not is_first and self._pad_image is not None:
+                for col in range(self._pad_image.shape[1]):
+                    columns.append(Column(data=self._pad_image[:, col].copy(), is_alert=False))
+            for col in range(width):
+                columns.append(Column(data=payload[:, col].copy(), is_alert=char_is_alert))
+            is_first = False
+        return columns
+
+    def enqueue_columns(self, columns: list[Column]) -> None:
+        """Append pre-rendered columns directly to the FIFO."""
+        self._fifo.extend(columns)
+
     def enqueue_text(
         self,
         text: str,
@@ -108,22 +145,14 @@ class ScrollEngine:
         ``alert_tokens`` are substrings whose matching columns are flagged
         is_alert=True so the display loop can apply inverted-flash.
         """
-        pad_chars = " " * (self.width // 8)
-        padded = pad_chars * leading_screen_widths + text + pad_chars * trailing_screen_widths
-        alert_flags = self._alert_char_mask(padded, alert_tokens or [])
-        icon_overrides = icon_overrides or {}
-
-        is_first = True
-        for i, ch in enumerate(padded):
-            char_is_alert = alert_flags[i]
-            payload, width = self._char_payload(ch, icon_overrides)
-            if payload is None:
-                continue
-            if not is_first:
-                self._push_pad()
-            for col in range(width):
-                self._fifo.append(Column(data=payload[:, col].copy(), is_alert=char_is_alert))
-            is_first = False
+        columns = self.render_text_columns(
+            text,
+            leading_screen_widths=leading_screen_widths,
+            trailing_screen_widths=trailing_screen_widths,
+            alert_tokens=alert_tokens,
+            icon_overrides=icon_overrides,
+        )
+        self.enqueue_columns(columns)
 
     def _char_payload(
         self, ch: str, icon_overrides: dict[str, np.ndarray]

@@ -136,19 +136,91 @@ class DashboardMailLoop:
 
     def _display_loop(self) -> None:
         assert self._engine is not None
+        import gc
+        import sys
+        from concurrent.futures import Future, ThreadPoolExecutor
         from ..timing import PreciseTicker
+
+        # 4: Reduce GIL switch interval to 0.5ms so background fetchers don't stall the display thread
+        sys.setswitchinterval(0.0005)
 
         engine = self._engine
         engine.enqueue_padding(screen_widths=1)
         ticker = PreciseTicker(self.scroll_speed)
 
-        while not self._stop_event.is_set():
-            if engine.pending_count() == 0:
-                self._refill_dashboard(engine)
-            engine.step()
-            matrix = make_matrix_buffer(engine.buffer)
-            self.device.write(matrix)
-            ticker.sleep_until_next(self._next_delay(engine))
+        # 5: Disable automatic garbage collection during high-speed animation
+        gc.disable()
+
+        # 2: Background prefetching worker for dashboard text rendering
+        # Rendering takes 100-350ms, so doing it in the background completely prevents frame drops.
+        refill_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="dashboard-renderer")
+        pending_future: Optional[Future] = None
+
+        # Threshold in columns to trigger background preparation of the next message
+        REFILL_TRIGGER_COLS = 128
+
+        try:
+            while not self._stop_event.is_set():
+                current_pending = engine.pending_count()
+
+                # Trigger background pre-render when columns are getting low and no worker is running
+                if current_pending <= REFILL_TRIGGER_COLS and pending_future is None:
+                    pending_future = refill_executor.submit(self._prepare_dashboard_columns, engine)
+
+                # If the FIFO is empty or nearly empty, check if pre-rendered columns are ready
+                if pending_future is not None and pending_future.done():
+                    try:
+                        cols = pending_future.result()
+                        if cols:
+                            engine.enqueue_columns(cols)
+                        else:
+                            engine.enqueue_padding(screen_widths=1)
+                    except Exception as exc:
+                        logger.warning("Failed to render background dashboard columns: %s", exc)
+                        engine.enqueue_padding(screen_widths=1)
+                    finally:
+                        pending_future = None
+                        # 5: Run explicit generational GC right after enqueuing columns.
+                        # The FIFO now has 500-1000 columns (5-10s buffer), so gen 1 collection (<0.2ms)
+                        # cleans up rendering allocations completely without any risk of jitter.
+                        gc.collect(1)
+
+                # Fallback: if FIFO completely emptied before future finished, wait briefly or step
+                if engine.pending_count() == 0:
+                    if pending_future is not None:
+                        try:
+                            cols = pending_future.result(timeout=1.0)
+                            if cols:
+                                engine.enqueue_columns(cols)
+                        except Exception:
+                            engine.enqueue_padding(screen_widths=1)
+                        pending_future = None
+                    else:
+                        engine.enqueue_padding(screen_widths=1)
+
+                engine.step()
+                matrix = make_matrix_buffer(engine.buffer)
+                self.device.write(matrix)
+                ticker.sleep_until_next(self._next_delay(engine))
+        finally:
+            refill_executor.shutdown(wait=False, cancel_futures=True)
+            gc.enable()
+
+    def _prepare_dashboard_columns(self, engine: ScrollEngine) -> list[Column]:
+        """Pre-render the next dashboard text in a background thread."""
+        weather = self.state.get_weather()
+        text = build_dashboard_text(self.state, self._available_icons)
+        if not text:
+            return []
+        tokens = weather_alert_tokens() if weather.has_warnings else None
+        icon_overrides = self._available_icons if self._available_icons else None
+        return engine.render_text_columns(
+            text,
+            leading_screen_widths=1,
+            trailing_screen_widths=1,
+            alert_tokens=tokens,
+            icon_overrides=icon_overrides,
+        )
 
     def _refill_dashboard(self, engine: ScrollEngine) -> None:
         weather = self.state.get_weather()

@@ -119,3 +119,17 @@ def test_multi_city_weather_chain():
     kimitsu_idx = dash_text.index("君津")
     train_idx = dash_text.index("運行情報：平常運転")
     assert meguro_idx < fuchu_idx < machida_idx < toda_idx < yokohama_idx < kimitsu_idx < train_idx
+
+
+def test_weather_segment_compound_normalization():
+    state = DashboardState()
+    state.update_cities_weather({
+        "東京都目黒区": WeatherInfo(today_weather="晴のち曇", today_high="30度", today_low="20度"),
+        "東京都府中市": WeatherInfo(today_weather="曇時々雨", today_high="28度", today_low="19度"),
+        "町田市": WeatherInfo(today_weather="雨ときどき雪", today_high="15度", today_low="10度"),
+    })
+    dash_text = build_dashboard_text(state)
+    assert "晴->曇" in dash_text
+    assert "曇/雨" in dash_text
+    assert "雨/雪" in dash_text
+

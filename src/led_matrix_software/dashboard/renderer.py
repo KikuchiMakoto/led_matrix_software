@@ -34,8 +34,13 @@ TRAIN_ITEM_SEPARATOR = "  "  # 2 ASCII spaces (~16 px gap)
 
 
 def _weather_segment(today_weather: str, available_icons: Mapping[str, np.ndarray]) -> str:
-    """Return the weather-character segment."""
-    return today_weather
+    """Return the weather-character segment with normalized half-width separators."""
+    return (
+        today_weather
+        .replace("のち", "->")
+        .replace("時々", "/")
+        .replace("ときどき", "/")
+    )
 
 
 def _format_city_weather(

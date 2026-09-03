@@ -234,6 +234,10 @@ HARDCODED_WEATHER_ICONS = {
     "雷雨": ICON_THUNDER,
 }
 
+# Special placeholders for compound weather icon tokens
+NOCHI_PLACEHOLDER = "\ue001"
+TOKIDOKI_PLACEHOLDER = "\ue002"
+
 # English filename aliases mapped to Japanese weather keys
 WEATHER_ICON_ALIASES: dict[str, list[str]] = {
     "sunny": ["晴", "晴れ", "快晴"],
@@ -247,6 +251,8 @@ WEATHER_ICON_ALIASES: dict[str, list[str]] = {
     "storm": ["雷", "雷雨", "嵐"],
     "celsius": ["℃", "度"],
     "degree": ["℃", "度"],
+    "nochi": [NOCHI_PLACEHOLDER, "のち"],
+    "tokidoki": [TOKIDOKI_PLACEHOLDER, "時々", "ときどき", "一時"],
 }
 
 HARDCODED_TRAIN_ICONS = {

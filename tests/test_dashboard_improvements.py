@@ -127,9 +127,24 @@ def test_weather_segment_compound_normalization():
         "東京都目黒区": WeatherInfo(today_weather="晴のち曇", today_high="30度", today_low="20度"),
         "東京都府中市": WeatherInfo(today_weather="曇時々雨", today_high="28度", today_low="19度"),
         "町田市": WeatherInfo(today_weather="雨ときどき雪", today_high="15度", today_low="10度"),
+        "埼玉県戸田市": WeatherInfo(today_weather="曇一時雨", today_high="25度", today_low="18度"),
     })
+    # Without icon available, fallback to "->" and "/"
     dash_text = build_dashboard_text(state)
     assert "晴->曇" in dash_text
     assert "曇/雨" in dash_text
     assert "雨/雪" in dash_text
+    assert "曇/雨" in dash_text  # "曇一時雨" -> "曇/雨"
+
+    # With nochi/tokidoki icons available, substituted with placeholders
+    import numpy as np
+    from led_matrix_software.dashboard.weather_icons import NOCHI_PLACEHOLDER, TOKIDOKI_PLACEHOLDER
+    dummy_icon = np.zeros((16, 16), dtype=np.uint8)
+    dash_text_with_icons = build_dashboard_text(
+        state,
+        available_icons={NOCHI_PLACEHOLDER: dummy_icon, TOKIDOKI_PLACEHOLDER: dummy_icon},
+    )
+    assert f"晴{NOCHI_PLACEHOLDER}曇" in dash_text_with_icons
+    assert f"曇{TOKIDOKI_PLACEHOLDER}雨" in dash_text_with_icons
+    assert f"雨{TOKIDOKI_PLACEHOLDER}雪" in dash_text_with_icons
 

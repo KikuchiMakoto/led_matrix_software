@@ -33,14 +33,23 @@ CITY_SEPARATOR = "      "  # 6 ASCII spaces (~48 px gap)
 TRAIN_ITEM_SEPARATOR = "  "  # 2 ASCII spaces (~16 px gap)
 
 
+from .weather_icons import NOCHI_PLACEHOLDER, TOKIDOKI_PLACEHOLDER
+
+
 def _weather_segment(today_weather: str, available_icons: Mapping[str, np.ndarray]) -> str:
-    """Return the weather-character segment with normalized half-width separators."""
-    return (
-        today_weather
-        .replace("のち", "->")
-        .replace("時々", "/")
-        .replace("ときどき", "/")
-    )
+    """Return the weather-character segment with icons or normalized half-width separators."""
+    res = today_weather
+    if NOCHI_PLACEHOLDER in available_icons or "nochi" in available_icons:
+        res = res.replace("のち", NOCHI_PLACEHOLDER)
+    else:
+        res = res.replace("のち", "->")
+
+    if TOKIDOKI_PLACEHOLDER in available_icons or "tokidoki" in available_icons:
+        res = res.replace("時々", TOKIDOKI_PLACEHOLDER).replace("ときどき", TOKIDOKI_PLACEHOLDER).replace("一時", TOKIDOKI_PLACEHOLDER)
+    else:
+        res = res.replace("時々", "/").replace("ときどき", "/").replace("一時", "/")
+
+    return res
 
 
 def _format_city_weather(

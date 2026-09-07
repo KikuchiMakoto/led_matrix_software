@@ -191,3 +191,39 @@ def test_train_text_not_replaced_by_weather_icons():
     assert len(train_calls) == 1
     assert train_calls[0][1] is None  # icon_overrides must be None!
 
+def test_train_http_get_uses_utf8_encoding(monkeypatch):
+    from unittest.mock import MagicMock
+    import requests
+    from led_matrix_software.dashboard.trains import _http_get
+
+    mock_resp = MagicMock()
+    mock_resp.status_code = 200
+    mock_resp.apparent_encoding = "ptcp154"
+    mock_resp.text = "平常運転"
+
+    def mock_get(*args, **kwargs):
+        return mock_resp
+
+    monkeypatch.setattr(requests, "get", mock_get)
+    result = _http_get("https://transit.yahoo.co.jp/traininfo/detail/63/0/")
+    assert mock_resp.encoding == "utf-8"
+    assert result == "平常運転"
+
+
+def test_scroll_engine_make_padding_columns():
+    from unittest.mock import MagicMock
+    from led_matrix_software.dashboard.scroll_engine import ScrollEngine
+
+    engine = ScrollEngine(
+        font=MagicMock(),
+        width=64,
+        height=16,
+    )
+    cols = engine.make_padding_columns(screen_widths=2)
+    assert len(cols) == 2 * engine.PAD_COLUMNS
+    for col in cols:
+        assert len(col.data) == 16
+        assert (col.data == 0).all()
+        assert not col.is_alert
+
+

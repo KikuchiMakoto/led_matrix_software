@@ -86,11 +86,14 @@ class ScrollEngine:
             raise IndexError("FIFO is empty")
         return self._fifo[0]
 
+    def make_padding_columns(self, screen_widths: int = 1) -> list[Column]:
+        """Return one or more full screens of blank columns without mutating the FIFO."""
+        zero_col = np.zeros(self.height, dtype=np.uint8)
+        return [Column(data=zero_col.copy()) for _ in range(screen_widths * self.PAD_COLUMNS)]
+
     def enqueue_padding(self, screen_widths: int = 1) -> None:
         """Push one or more full screens of blank columns (clear / lead-in)."""
-        zero_col = np.zeros(self.height, dtype=np.uint8)
-        for _ in range(screen_widths * self.PAD_COLUMNS):
-            self._fifo.append(Column(data=zero_col.copy()))
+        self._fifo.extend(self.make_padding_columns(screen_widths))
 
     def render_text_columns(
         self,

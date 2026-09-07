@@ -85,7 +85,8 @@ def _http_get(url: str) -> Optional[str]:
         if resp.status_code != 200:
             logger.warning("Yahoo Transit fetch %s -> HTTP %s", url, resp.status_code)
             return None
-        resp.encoding = resp.apparent_encoding or "utf-8"
+        # Yahoo Transit pages are UTF-8; apparent_encoding can misidentify encoding
+        resp.encoding = "utf-8"
         return resp.text
     except requests.RequestException as exc:
         logger.warning("Yahoo Transit fetch %s failed: %s", url, exc)

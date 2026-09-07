@@ -173,11 +173,14 @@ def build_dashboard_text(
     state: DashboardState,
     available_icons: Optional[Mapping[str, np.ndarray]] = None,
 ) -> str:
-    """Compose full dashboard scroll text: weather and (if any abnormal) train status."""
-    weather_text = build_weather_text(state, available_icons)
+    """Build the single scrolling text string for the entire dashboard.
+
+    Weather section uses icon substitutions when available_icons is provided.
+    Train section is kept as raw text without icon substitutions so that
+    operational status messages (e.g., '大雨の影響で...') remain readable.
+    """
+    weather_text = build_weather_text(state, available_icons=available_icons)
     train_text = build_train_text(state)
-    if not train_text:
-        return weather_text
     return f"{weather_text}{BLOCK_SEPARATOR}{train_text}"
 
 

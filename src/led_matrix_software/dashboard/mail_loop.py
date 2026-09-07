@@ -21,7 +21,12 @@ from concurrent.futures import ThreadPoolExecutor
 from typing import Callable, Optional
 
 from ..matrix import make_matrix_buffer
-from .renderer import build_dashboard_text, weather_alert_tokens
+from .renderer import (
+    BLOCK_SEPARATOR,
+    build_train_text,
+    build_weather_text,
+    weather_alert_tokens,
+)
 from .scroll_engine import Column, ScrollEngine
 from .state import DashboardState, MessageQueue
 from .trains import fetch_all_trains
@@ -219,30 +224,67 @@ class DashboardMailLoop:
     def _prepare_dashboard_columns(self, engine: ScrollEngine) -> list[Column]:
         """Pre-render the next dashboard text in a background thread."""
         weather = self.state.get_weather()
-        text = build_dashboard_text(self.state, self._available_icons)
-        if not text:
+        weather_text = build_weather_text(self.state, self._available_icons)
+        train_text = build_train_text(self.state)
+
+        parts = []
+        if weather_text:
+            parts.append(("weather", weather_text))
+        if train_text:
+            parts.append(("train", train_text))
+
+        if not parts:
             return []
+
         tokens = weather_alert_tokens() if weather.has_warnings else None
         icon_overrides = self._available_icons if self._available_icons else None
-        return engine.render_text_columns(
-            text,
-            leading_screen_widths=1,
-            trailing_screen_widths=1,
-            alert_tokens=tokens,
-            icon_overrides=icon_overrides,
-        )
+
+        result_cols: list[Column] = []
+        # Leading screen width padding on the first segment
+        result_cols.extend(engine.make_padding_columns(screen_widths=1))
+
+        for idx, (kind, text_segment) in enumerate(parts):
+            if idx > 0:
+                result_cols.extend(
+                    engine.render_text_columns(
+                        BLOCK_SEPARATOR,
+                        leading_screen_widths=0,
+                        trailing_screen_widths=0,
+                    )
+                )
+            if kind == "weather":
+                # Weather uses icon overrides
+                result_cols.extend(
+                    engine.render_text_columns(
+                        text_segment,
+                        leading_screen_widths=0,
+                        trailing_screen_widths=0,
+                        alert_tokens=tokens,
+                        icon_overrides=icon_overrides,
+                    )
+                )
+            else:
+                # Train does not use icon overrides so text like '大雨の影響で' stays readable
+                result_cols.extend(
+                    engine.render_text_columns(
+                        text_segment,
+                        leading_screen_widths=0,
+                        trailing_screen_widths=0,
+                        alert_tokens=tokens,
+                        icon_overrides=None,
+                    )
+                )
+
+        # Trailing screen width padding
+        result_cols.extend(engine.make_padding_columns(screen_widths=1))
+        return result_cols
 
     def _refill_dashboard(self, engine: ScrollEngine) -> None:
-        weather = self.state.get_weather()
-        text = build_dashboard_text(self.state, self._available_icons)
-        if not text:
+        columns = self._prepare_dashboard_columns(engine)
+        if not columns:
             engine.enqueue_padding(screen_widths=1)
             return
-        tokens = weather_alert_tokens() if weather.has_warnings else None
-        # Pass external BMP icons as character overrides so that any matching
-        # weather characters (across all cities) render as 16x16 bitmaps.
-        icon_overrides = self._available_icons if self._available_icons else None
-        engine.enqueue_text(text, alert_tokens=tokens, icon_overrides=icon_overrides)
+        engine.columns.extend(columns)
 
     def _next_delay(self, engine: ScrollEngine) -> float:
         """Use alert_scroll_speed when the next FIFO column is flagged."""

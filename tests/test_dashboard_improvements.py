@@ -148,3 +148,46 @@ def test_weather_segment_compound_normalization():
     assert f"曇{TOKIDOKI_PLACEHOLDER}雨" in dash_text_with_icons
     assert f"雨{TOKIDOKI_PLACEHOLDER}雪" in dash_text_with_icons
 
+
+def test_train_text_not_replaced_by_weather_icons():
+    """Verify that train delay details containing weather terms like '大雨' do not get replaced."""
+    from unittest.mock import MagicMock
+    from led_matrix_software.dashboard.mail_loop import DashboardMailLoop
+    from led_matrix_software.dashboard.weather_icons import EXTERNAL_WEATHER_ICONS
+
+    state = DashboardState()
+    state.update_cities_weather({
+        "東京都目黒区": WeatherInfo(today_weather="晴", today_high="30度", today_low="20度"),
+    })
+    state.update_trains({
+        "京王本線": TrainStatus(line="京王本線", status="遅延", detail="大雨の影響でダイヤが乱れています"),
+    })
+
+    loop = DashboardMailLoop(
+        device=MagicMock(),
+        font=MagicMock(),
+        state=state,
+    )
+    engine = MagicMock()
+    # Intercept render_text_columns to check what text and icon_overrides are passed
+    rendered_calls = []
+
+    def fake_render(text, leading_screen_widths=0, trailing_screen_widths=0, alert_tokens=None, icon_overrides=None):
+        rendered_calls.append((text, icon_overrides))
+        return []
+
+    engine.render_text_columns.side_effect = fake_render
+    engine.make_padding_columns.return_value = []
+
+    loop._prepare_dashboard_columns(engine)
+
+    # Weather call should have icon_overrides
+    weather_calls = [call for call in rendered_calls if "目黒" in call[0]]
+    assert len(weather_calls) == 1
+    assert weather_calls[0][1] is not None  # has icon_overrides
+
+    # Train call containing "大雨の影響で" must NOT have icon_overrides
+    train_calls = [call for call in rendered_calls if "大雨の影響で" in call[0]]
+    assert len(train_calls) == 1
+    assert train_calls[0][1] is None  # icon_overrides must be None!
+

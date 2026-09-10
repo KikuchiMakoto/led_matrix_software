@@ -45,6 +45,47 @@ class TerminalSimulator(LEDDevice):
             pass
         return sys.stdout
 
+    # Density ramp for grayscale preview (10 steps)
+    _RAMP = " .:-=+*#%@"
+
+    def write_grayscale(self, gray: np.ndarray, bits: int = 8, gamma: float = 2.2,
+                        gain: float = 1.0) -> None:
+        """
+        Display grayscale image in terminal using a density ramp.
+
+        Args:
+            gray: uint8 array (16, 128)
+        """
+        from ..matrix import gamma_lut
+
+        h, w = gray.shape[:2]
+        target = np.zeros((self.height, self.width), dtype=np.uint8)
+        vh, vw = min(h, self.height), min(w, self.width)
+        if vh > 0 and vw > 0:
+            target[:vh, :vw] = np.clip(gray[:vh, :vw], 0, 255)
+        corrected = np.clip(
+            gamma_lut(gamma)[target].astype(np.float32) * gain, 0, 255
+        ).astype(np.uint8)
+        ramp = self._RAMP
+        levels = len(ramp) - 1
+        if self._can_clear:
+            if os.name == "nt":
+                os.system("cls")
+            else:
+                os.system("clear")
+        out = self._stdout
+        out.write(f"\n=== LED Matrix Simulator (Frame {self.frame_count}) ===\n")
+        out.write("+" + "-" * self.width + "+\n")
+        idx = (corrected.astype(np.uint16) * levels // 255).astype(np.int64)
+        for y in range(self.height):
+            out.write("|" + "".join(ramp[i] for i in idx[y]) + "|\n")
+        out.write("+" + "-" * self.width + "+\n")
+        try:
+            out.flush()
+        except Exception:
+            pass
+        self.frame_count += 1
+
     def write(self, matrix_buffer: np.ndarray) -> None:
         """
         Display matrix buffer in terminal.
@@ -113,6 +154,45 @@ class ImageSimulator(LEDDevice):
         self.frames = []
         self.save_individual_frames = save_individual_frames
 
+    def write_grayscale(self, gray: np.ndarray, bits: int = 8, gamma: float = 2.2,
+                        gain: float = 1.0) -> None:
+        """
+        Save grayscale image with brightness-scaled LED rendering.
+
+        Args:
+            gray: uint8 array (16, 128)
+        """
+        from ..matrix import gamma_lut
+
+        h, w = gray.shape[:2]
+        target = np.zeros((self.height, self.width), dtype=np.uint8)
+        vh, vw = min(h, self.height), min(w, self.width)
+        if vh > 0 and vw > 0:
+            target[:vh, :vw] = np.clip(gray[:vh, :vw], 0, 255)
+        corrected = np.clip(
+            gamma_lut(gamma)[target].astype(np.float32) * gain, 0, 255
+        ).astype(np.uint8)
+
+        border_size = 20
+        canvas_height = self.height * self.pixel_size + border_size * 2
+        canvas_width = self.width * self.pixel_size
+        img = np.zeros((canvas_height, canvas_width, 3), dtype=np.uint8)
+
+        for y in range(self.height):
+            for x in range(self.width):
+                level = int(corrected[y, x])
+                if level > 0:
+                    center_x = x * self.pixel_size + self.pixel_size // 2
+                    center_y = y * self.pixel_size + self.pixel_size // 2 + border_size
+                    self._draw_glowing_led(img, center_x, center_y, level)
+
+        if self.save_individual_frames:
+            output_file = self.output_dir / f"frame_{self.frame_count:04d}.png"
+            cv2.imwrite(str(output_file), img)
+
+        self.frames.append(img)
+        self.frame_count += 1
+
     def write(self, matrix_buffer: np.ndarray) -> None:
         """
         Save matrix buffer as image file with LED-like rendering.
@@ -153,7 +233,8 @@ class ImageSimulator(LEDDevice):
         self.frames.append(img)
         self.frame_count += 1
 
-    def _draw_glowing_led(self, img: np.ndarray, cx: int, cy: int) -> None:
+    def _draw_glowing_led(self, img: np.ndarray, cx: int, cy: int,
+                          level: int = 255) -> None:
         """
         Draw a glowing LED effect at the specified position.
 
@@ -161,22 +242,19 @@ class ImageSimulator(LEDDevice):
             img: Image to draw on
             cx: Center X coordinate
             cy: Center Y coordinate
+            level: Brightness 0..255 (scales the red intensity)
         """
-        # LED appearance: red glowing circle
-        # Outer glow (largest, dimmest)
-        cv2.circle(img, (cx, cy), 5, (0, 0, 80), -1, cv2.LINE_AA)
+        k = max(0, min(255, int(level))) / 255.0
 
-        # Middle glow
-        cv2.circle(img, (cx, cy), 4, (0, 0, 150), -1, cv2.LINE_AA)
+        def dim(v: int) -> int:
+            return int(v * k)
 
-        # Inner bright core
-        cv2.circle(img, (cx, cy), 3, (0, 0, 220), -1, cv2.LINE_AA)
-
-        # Brightest center
-        cv2.circle(img, (cx, cy), 2, (0, 0, 255), -1, cv2.LINE_AA)
-
-        # Hot spot (very bright center)
-        cv2.circle(img, (cx, cy), 1, (40, 40, 255), -1, cv2.LINE_AA)
+        # LED appearance: red glowing circle, intensity-scaled
+        cv2.circle(img, (cx, cy), 5, (0, 0, dim(80)), -1, cv2.LINE_AA)
+        cv2.circle(img, (cx, cy), 4, (0, 0, dim(150)), -1, cv2.LINE_AA)
+        cv2.circle(img, (cx, cy), 3, (0, 0, dim(220)), -1, cv2.LINE_AA)
+        cv2.circle(img, (cx, cy), 2, (0, 0, dim(255)), -1, cv2.LINE_AA)
+        cv2.circle(img, (cx, cy), 1, (dim(40), dim(40), dim(255)), -1, cv2.LINE_AA)
 
     def save_video(self, filename: str = "animation.mp4", fps: int = 30) -> None:
         """

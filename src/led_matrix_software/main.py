@@ -12,6 +12,7 @@ from .background import is_bg_child, relaunch_detached
 from .fonts import ShinonomeFont, CharaZenkakuFont
 from .devices import SerialLEDDevice, TerminalSimulator, ImageSimulator, FrameTapDevice
 from .matrix import make_matrix_buffer
+from .video import DEFAULT_BITS, DEFAULT_GAIN, DEFAULT_GAMMA, VideoPlayer
 from .power import prevent_sleep
 from .tray import run_in_tray
 
@@ -164,6 +165,23 @@ def run_display(args, device, font, stop_event=None) -> None:
             loop_text(
                 device, font, args.text, scroll_speed=args.scroll_speed, stop_event=stop_event
             )
+    elif args.mode == "video":
+        if not args.video_src:
+            print("Error: video mode requires --video-src FILE or cam:N")
+            sys.exit(2)
+        print(f"Playing video: {args.video_src}")
+        player = VideoPlayer(
+            device,
+            args.video_src,
+            fps=args.fps,
+            bits=args.bits,
+            gamma=args.gamma,
+            gain=args.gain,
+            loop=args.loop_video,
+            aspect=args.aspect,
+            crop_y=args.crop_y,
+        )
+        player.run(stop_event=stop_event)
     else:  # dashboard
         dashboard_text(
             device,
@@ -206,11 +224,12 @@ def main():
     # Display options
     parser.add_argument(
         "--mode",
-        choices=["static", "scroll", "loop", "dashboard"],
+        choices=["static", "scroll", "loop", "dashboard", "video"],
         default="static",
         help=(
             "Display mode: static (no scroll), scroll (scroll once), "
-            "loop (infinite scroll), dashboard (async weather+train MailLoop). "
+            "loop (infinite scroll), dashboard (async weather+train MailLoop), "
+            "video (grayscale file/camera playback). "
             "Default: static"
         ),
     )
@@ -239,6 +258,54 @@ def main():
     # Image output options
     parser.add_argument(
         "--output-dir", default="output", help="Output directory for image device (default: output)"
+    )
+
+    # Video options
+    parser.add_argument(
+        "--video-src",
+        default="",
+        help="Video mode: file path or camera (cam:0). Required for video mode.",
+    )
+    parser.add_argument(
+        "--fps",
+        type=float,
+        default=0.0,
+        help="Video mode: playback fps (0 = source fps or 30).",
+    )
+    parser.add_argument(
+        "--bits",
+        type=int,
+        default=DEFAULT_BITS,
+        help=f"Video mode: bit depth 1..8 (default: {DEFAULT_BITS})",
+    )
+    parser.add_argument(
+        "--gamma",
+        type=float,
+        default=DEFAULT_GAMMA,
+        help=f"Video mode: gamma exponent (default: {DEFAULT_GAMMA})",
+    )
+    parser.add_argument(
+        "--gain",
+        type=float,
+        default=DEFAULT_GAIN,
+        help=f"Video mode: digital gain 0..1 (default: {DEFAULT_GAIN:.4f})",
+    )
+    parser.add_argument(
+        "--loop-video",
+        action="store_true",
+        help="Video mode: loop file playback until interrupted.",
+    )
+    parser.add_argument(
+        "--aspect",
+        choices=["crop", "stretch"],
+        default="crop",
+        help="Video mode: keep source aspect by cropping (default) or stretch.",
+    )
+    parser.add_argument(
+        "--crop-y",
+        type=int,
+        default=0,
+        help="Video mode: vertical crop offset in source pixels (+down).",
     )
 
     # Dashboard options

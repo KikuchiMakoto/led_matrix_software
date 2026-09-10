@@ -1,4 +1,11 @@
-"""Serial LED device implementation (COBS binary protocol, no Base64)."""
+"""Serial LED device implementation (COBS binary protocol, no Base64).
+
+A background reader thread drains device-to-host lines (+HB status) so the
+firmware TX buffer never fills during sustained streaming.
+"""
+
+import re
+import threading
 
 import numpy as np
 import serial
@@ -6,6 +13,8 @@ import serial
 from ..protocol import CMD_BRIGHTNESS, encode_command, encode_frame
 from ..matrix import make_grayscale_payload
 from .base import LEDDevice
+
+_HB_RE = re.compile(r"\+HB ok=(\d+) err=(\d+) rx=(\d+) bits=(\d+) rows=(\d+)")
 
 
 class SerialLEDDevice(LEDDevice):
@@ -25,6 +34,47 @@ class SerialLEDDevice(LEDDevice):
         self.timeout = timeout
         # Set write_timeout=1 to prevent unbounded blocking if USB stalls
         self.serial = serial.Serial(port, baudrate, timeout=timeout, write_timeout=1)
+        self._stats_lock = threading.Lock()
+        self._stats = {
+            "ok": 0,
+            "err": 0,
+            "rx": 0,
+            "bits": 0,
+            "rows": 0,
+        }
+        self._stop_reader = threading.Event()
+        self._reader = threading.Thread(
+            target=self._reader_loop, daemon=True, name="serial-reader"
+        )
+        self._reader.start()
+
+    def _reader_loop(self) -> None:
+        """Drain +HB status lines; never let firmware TX back up."""
+        while not self._stop_reader.is_set():
+            try:
+                line = self.serial.readline()
+            except Exception:
+                break
+            if not line:
+                continue
+            try:
+                text = line.decode("utf-8", "replace")
+            except Exception:
+                continue
+            m = _HB_RE.search(text)
+            if not m:
+                continue
+            with self._stats_lock:
+                self._stats["ok"] = int(m.group(1))
+                self._stats["err"] = int(m.group(2))
+                self._stats["rx"] = int(m.group(3))
+                self._stats["bits"] = int(m.group(4))
+                self._stats["rows"] = int(m.group(5))
+
+    def get_stats(self) -> dict:
+        """Return the latest firmware status snapshot."""
+        with self._stats_lock:
+            return dict(self._stats)
 
     def write(self, matrix_buffer: np.ndarray) -> None:
         """
@@ -66,5 +116,13 @@ class SerialLEDDevice(LEDDevice):
 
     def close(self) -> None:
         """Close serial connection"""
+        self._stop_reader.set()
+        try:
+            # Unblock a pending readline so the thread can exit promptly.
+            self.serial.cancel_read()
+        except Exception:
+            pass
+        if self._reader.is_alive():
+            self._reader.join(timeout=2.0)
         if self.serial.is_open:
             self.serial.close()

@@ -16,6 +16,8 @@ def prevent_sleep(*, verbose: bool = True):
 
     Falls back to a no-op (with a warning) if wakepy is unavailable or the
     platform cannot be kept awake, so display never fails because of this.
+
+    Body exceptions always propagate; wakepy teardown still runs.
     """
     try:
         from wakepy import keep
@@ -26,14 +28,20 @@ def prevent_sleep(*, verbose: bool = True):
         return
 
     try:
-        with keep.running(on_fail="warn") as mode:
-            if verbose:
-                if mode.active:
-                    print("Sleep inhibited (screen lock / screen off still allowed).")
-                else:
-                    print("Warning: failed to inhibit system sleep; continuing anyway.")
-            yield bool(mode.active)
-    except Exception as e:  # pragma: no cover - platform dependent
+        manager = keep.running(on_fail="warn")
+        mode = manager.__enter__()
+    except Exception as e:
         if verbose:
             print(f"Warning: failed to inhibit system sleep ({e}); continuing anyway.")
         yield False
+        return
+
+    if verbose:
+        if mode.active:
+            print("Sleep inhibited (screen lock / screen off still allowed).")
+        else:
+            print("Warning: failed to inhibit system sleep; continuing anyway.")
+    try:
+        yield bool(mode.active)
+    finally:
+        manager.__exit__(None, None, None)

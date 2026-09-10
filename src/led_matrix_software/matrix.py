@@ -48,6 +48,17 @@ def _binary_to_matrix_buffer(binary: np.ndarray) -> np.ndarray:
     return np.dot(binary.reshape(16, 8, 16).swapaxes(0, 1), _POWERS_OF_TWO)
 
 
+def matrix_buffer_to_image(matrix_buffer: np.ndarray) -> np.ndarray:
+    """Convert [8][16] uint16 buffer to 16x128 uint8 image (0/255)."""
+    buf = np.ascontiguousarray(matrix_buffer, dtype="<u2").reshape(8, 16)
+    img = np.zeros((16, 128), dtype=np.uint8)
+    shifts = np.arange(15, -1, -1, dtype=np.uint16)
+    for g in range(8):
+        bits = ((buf[g][:, None] >> shifts) & 1).astype(np.uint8)
+        img[:, g * 16 : (g + 1) * 16] = bits * 255
+    return img
+
+
 def make_grayscale_payload(
     gray: np.ndarray, bits: int = 8, gamma: float = 2.2, gain: float = 1.0
 ) -> bytes:

@@ -8,7 +8,6 @@ Pacing uses PreciseTicker (drops lag beyond 2 frames, no catch-up spiral).
 from __future__ import annotations
 
 import logging
-import time
 
 import cv2
 import numpy as np
@@ -116,6 +115,7 @@ class VideoPlayer:
             print(f"Playing {self.src} at {fps:.1f}fps ({self.bits}bit)...")
             ticker = PreciseTicker(1.0 / fps)
             frames = 0
+            dropped = 0
             while True:
                 if stop_event is not None and stop_event.is_set():
                     break
@@ -126,12 +126,21 @@ class VideoPlayer:
                         continue
                     break
                 gray = frame_to_gray(frame, self.aspect, self.crop_y)
-                self.device.write_grayscale(
-                    gray, bits=self.bits, gamma=self.gamma, gain=self.gain
-                )
+                try:
+                    self.device.write_grayscale(
+                        gray, bits=self.bits, gamma=self.gamma, gain=self.gain
+                    )
+                except Exception as e:
+                    # Sustained streaming must survive a transient stall
+                    # (e.g. USB write timeout): drop the frame and continue.
+                    dropped += 1
+                    if dropped <= 3 or dropped % 100 == 0:
+                        logger.warning("Dropped video frame %d: %s", frames, e)
+                    ticker.sleep_until_next()
+                    continue
                 frames += 1
                 ticker.sleep_until_next()
-            print(f"Video done ({frames} frames).")
+            print(f"Video done ({frames} frames, {dropped} dropped).")
             return frames
         finally:
             cap.release()

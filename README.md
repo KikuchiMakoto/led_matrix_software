@@ -9,8 +9,12 @@
   - Chara Zenkakuフォント: 全角文字対応
 
 - **複数の出力デバイス対応**
-  - シリアルデバイス: 実際のLEDマトリックス（シリアル接続）
-  - ターミナル出力: ハードウェアなしでテスト可能
+  - シリアルデバイス: 実際のLEDマトリックス（COBS 1〜8bit＋輝度コマンド）
+  - ターミナル出力: ハードウェアなしでテスト可能（ANSI高速描画・濃度ランプ・FPS表示）
+  - エミュレータ (`--device emulator`): AI開発専用ヘッドレス。フレーム状態・FPS・ジッターをプログラム取得可能（`AIEmulatorDevice`）
+
+- **表示モード**
+  - 静的表示・スクロール・ダッシュボードに加え、**動画モード**（MP4/カメラの8bitグレースケール再生、アスペクト保持クロップ付き）
   - 画像出力: staticモードではPNG画像、scrollモードではMP4動画として保存
     - リアルなLED表示: グロー効果付きの丸いLED描画（1280x200ピクセル、上下ボーダー付き）
 
@@ -128,15 +132,23 @@ uv run python -m led_matrix_software.main --mode dashboard --device terminal \
 ### コマンドラインオプション
 
 ```
---device {serial,terminal,image}  出力デバイスタイプ（デフォルト: terminal）
+--device {serial,terminal,image,emulator}  出力デバイスタイプ（デフォルト: terminal）
 --port PORT                       シリアルポート（デフォルト: COM23）
---baudrate BAUDRATE               ボーレート（デフォルト: 921600）
+--baudrate BAUDRATE               ボーレート（デフォルト: 921600、CDCでは無視）
 --font {shinonome,chara_zenkaku}  使用するフォント（デフォルト: shinonome）
 --font-dir FONT_DIR               フォントディレクトリパス
---mode {static,scroll,loop,dashboard}  表示モード（デフォルト: static）
+--mode {static,scroll,loop,dashboard,video}  表示モード（デフォルト: static）
 --text TEXT                       表示するテキスト
 --scroll-speed SPEED              スクロール速度（秒）（デフォルト: 0.02）
 --output-dir OUTPUT_DIR           画像出力ディレクトリ（デフォルト: output）
+--video-src SRC                   動画モード: ファイルパスまたは cam:N（必須）
+--fps FPS                         動画モード: 再生fps（0=自動、デフォルト: 0）
+--bits BITS                       動画モード: 階調ビット数 1..8（デフォルト: 8）
+--gamma GAMMA                     動画モード: ガンマ値（デフォルト: 2.2）
+--gain GAIN                       動画モード: デジタルゲイン 0..1（デフォルト: 0.4314）
+--loop-video                      動画モード: ファイルをループ再生
+--aspect {crop,stretch}           動画モード: アスペクト保持切出（デフォルト: crop）
+--crop-y PIXELS                   動画モード: 切出位置の垂直オフセット（デフォルト: 0）
 --weather-interval SECONDS        dashboard: 天気取得間隔（デフォルト: 600）
 --train-interval SECONDS          dashboard: 電車取得間隔（デフォルト: 60）
 --alert-scroll-speed SECONDS      dashboard: 警報区間のスクロール遅延（デフォルト: 0.04）
@@ -174,12 +186,31 @@ led-matrix-software/
 └── README.md
 ```
 
+### 動画モード
+
+```bash
+# MP4ファイルを30fpsで再生（実機）
+uv run python -m led_matrix_software.main --mode video --video-src movie.mp4 --fps 30 \
+    --device serial --port /dev/ttyACM0
+
+# カメラ入力（60fps目標・4bitで軽量化）
+uv run python -m led_matrix_software.main --mode video --video-src cam:0 --fps 60 --bits 4 \
+    --device serial --port /dev/ttyACM0
+
+# 歌詞テロップなど下部を見たい場合はクロップ位置を下げる
+uv run python -m led_matrix_software.main --mode video --video-src movie.mp4 \
+    --crop-y 60 --device serial --port /dev/ttyACM0
+```
+
+トーン既定値（実機検証済み）: ガンマ2.2＋ゲイン110/255（`--gamma`/`--gain`で変更可）。
+
 ## LEDマトリックス仕様
 
 - **解像度**: 128 x 16 ピクセル
-- **通信**: シリアル通信（921600 bps）
-- **プロトコル**: Base64エンコードされた256バイト（uint16配列[8][16]）
-- **ファームウェア**: [LED_Matrix_firmware_K00798](https://github.com/KikuchiMakoto/LED_Matrix_firmware_K00798)
+- **通信**: USB CDC-ACM シリアル（`/dev/ttyACM0`、ボーレート設定は無視）
+- **プロトコル**: COBS＋固定4Bヘッダ（`MAGIC/MODE/LEN`）＋`0x00`区切り
+  - 1bit（256B）/ 2〜8bitグレースケール（512〜2048B）/ 輝度コマンド
+- **ファームウェア**: [led_matrix_firmware](https://github.com/KikuchiMakoto/led_matrix_firmware)（Arduino＋PIO＋DMA＋BAM）
 
 ### 画像出力の特徴
 

@@ -1,20 +1,24 @@
 """LED Matrix Display Main Program"""
 
 import argparse
+import sys
 import threading
 import time
-import sys
 
-import numpy as np
-
-from .dashboard import DashboardMailLoop, DashboardState
 from .background import is_bg_child, relaunch_detached
-from .fonts import ShinonomeFont, CharaZenkakuFont
-from .devices import SerialLEDDevice, TerminalSimulator, ImageSimulator, FrameTapDevice
+from .dashboard import DashboardMailLoop, DashboardState
+from .devices import (
+    AIEmulatorDevice,
+    FrameTapDevice,
+    ImageSimulator,
+    SerialLEDDevice,
+    TerminalSimulator,
+)
+from .fonts import CharaZenkakuFont, ShinonomeFont
 from .matrix import make_matrix_buffer
-from .video import DEFAULT_BITS, DEFAULT_GAIN, DEFAULT_GAMMA, VideoPlayer
 from .power import prevent_sleep
 from .tray import run_in_tray
+from .video import DEFAULT_BITS, DEFAULT_GAIN, DEFAULT_GAMMA, VideoPlayer
 
 
 def show_text(device, font, text: str):
@@ -51,12 +55,11 @@ def scroll_text(device, font, text: str, scroll_speed: float = 0.01):
     # Render text once
     img = font.render_string(padded_text)
 
-    # Scroll by removing one column at a time
+    # Scroll with a column index (np.delete per frame copies the array)
     loop_length = img.shape[1]
     for i in range(loop_length):
-        matrix = make_matrix_buffer(img)
+        matrix = make_matrix_buffer(img[:, i:])
         device.write(matrix)
-        img = np.delete(img, 0, axis=1)
         time.sleep(scroll_speed)
 
     print("Scroll completed.")
@@ -88,14 +91,13 @@ def loop_text(device, font, text: str, scroll_speed: float = 0.01, stop_event=No
             # Render text for each loop iteration
             img = font.render_string(padded_text)
 
-            # Scroll by removing one column at a time
+            # Scroll with a column index (np.delete per frame copies the array)
             loop_length = img.shape[1]
             for i in range(loop_length):
                 if stopped():
                     break
-                matrix = make_matrix_buffer(img)
+                matrix = make_matrix_buffer(img[:, i:])
                 device.write(matrix)
-                img = np.delete(img, 0, axis=1)
                 time.sleep(scroll_speed)
     except KeyboardInterrupt:
         print("\nLoop scroll stopped by user.")
@@ -201,9 +203,9 @@ def main():
     # Device options
     parser.add_argument(
         "--device",
-        choices=["serial", "terminal", "image"],
+        choices=["serial", "terminal", "image", "emulator"],
         default="terminal",
-        help="Output device type (default: terminal)",
+        help="Output device type (default: terminal, emulator=headless AI use)",
     )
     parser.add_argument(
         "--port", default="COM23", help="Serial port (for serial device, default: COM23)"
@@ -366,6 +368,8 @@ def main():
             sys.exit(1)
     elif args.device == "terminal":
         device = TerminalSimulator()
+    elif args.device == "emulator":
+        device = AIEmulatorDevice()
     else:  # image
         device = ImageSimulator(output_dir=args.output_dir)
 

@@ -5,7 +5,6 @@ matrix is displaying, without touching the display code paths.
 """
 
 import threading
-from typing import Optional
 
 import numpy as np
 
@@ -18,7 +17,7 @@ class FrameTapDevice(LEDDevice):
     def __init__(self, device: LEDDevice):
         self._device = device
         self._lock = threading.Lock()
-        self._latest: Optional[np.ndarray] = None
+        self._latest: np.ndarray | None = None
         self.frame_count = 0
 
     @property
@@ -32,8 +31,22 @@ class FrameTapDevice(LEDDevice):
             self.frame_count += 1
         self._device.write(matrix_buffer)
 
-    def latest_frame(self) -> Optional[np.ndarray]:
-        """Return a copy of the most recent matrix buffer (or None)."""
+    def write_grayscale(
+        self, gray: np.ndarray, bits: int = 8, gamma: float = 2.2, gain: float = 1.0
+    ) -> None:
+        """Cache the grayscale frame and delegate (tray thumbnail support)."""
+        with self._lock:
+            h, w = gray.shape[:2]
+            img = np.zeros((16, 128), dtype=np.uint8)
+            vh, vw = min(h, 16), min(w, 128)
+            if vh > 0 and vw > 0:
+                img[:vh, :vw] = np.clip(gray[:vh, :vw], 0, 255)
+            self._latest = img
+            self.frame_count += 1
+        self._device.write_grayscale(gray, bits=bits, gamma=gamma, gain=gain)
+
+    def latest_frame(self) -> np.ndarray | None:
+        """Return a copy of the most recent frame (or None)."""
         with self._lock:
             return None if self._latest is None else self._latest.copy()
 
@@ -47,10 +60,7 @@ class FrameTapDevice(LEDDevice):
 
 def matrix_to_pixels(matrix_buffer: np.ndarray, width: int = 128, height: int = 16) -> np.ndarray:
     """Unpack a uint16 [8][16] matrix buffer into a bool array [height][width]."""
-    pixels = np.zeros((height, width), dtype=bool)
-    for x in range(width):
-        col_idx = x // 16
-        bit_idx = x % 16
-        for y in range(height):
-            pixels[y, x] = bool((int(matrix_buffer[col_idx][y]) >> (15 - bit_idx)) & 1)
-    return pixels
+    from ..matrix import matrix_buffer_to_image
+
+    img = matrix_buffer_to_image(matrix_buffer)
+    return img[:height, :width] > 0
